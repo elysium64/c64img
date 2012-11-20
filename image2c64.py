@@ -18,12 +18,13 @@ Requirements:
     - Image (PIL) module <http://www.pythonware.com/products/pil/>
 
 Changes:
+    2012-11-20 Added executable output format for multicolor
     2012-11-19 Added multicolor support, changes to the docstrings
     2012-11-18 First public release
 
 Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
-Date: 2012-11-19
-Version: 1.1
+Date: 2012-11-20
+Version: 1.2
 Licence: BSD
 """
 import sys
@@ -144,13 +145,20 @@ class FullScreenImage(object):
         self._src_image = None
         self.log = Logger(self.LOGGER_NAME)()
         self._data = {}
+        self._save_map = {}
 
-    def set_border_color(self, color):
+    def save(self, filename, format_=None):
         """
-        Set custom color for border (as index)
+        Save picture in one of the formats or as an executable prg.
         """
-        self.log.info("Setting border color to: %d", color)
-        self._data['border'] = color
+        if not self._data.get('bitmap'):
+            if not self._convert():
+                return False
+
+        if os.path.exists(filename):
+            self.log.warning("File `%s' will be overwritten", filename)
+
+        return self._save_map[format_](filename)
 
     def set_bg_color(self, color):
         """
@@ -158,6 +166,13 @@ class FullScreenImage(object):
         """
         self.log.info("Setting background color to: %d", color)
         self._data['background'] = color
+
+    def set_border_color(self, color):
+        """
+        Set custom color for border (as index)
+        """
+        self.log.info("Setting border color to: %d", color)
+        self._data['border'] = color
 
     def _load(self):
         """
@@ -248,13 +263,6 @@ class FullScreenImage(object):
         """
         raise NotImplementedError()
 
-    def save(self, filename, format_=None):
-        """
-        Save picture in one of the formats or as an executable prg. Should be
-        implemented in concrete implementation.
-        """
-        raise NotImplementedError()
-
     def _get_displayer(self):
         """
         Return displayer code. Here it is only a stub. Should be implemented
@@ -312,6 +320,41 @@ class FullScreenImage(object):
 
         return background
 
+    def _error_image_action(self, error_list, scaled=False):
+        """
+        Create image with hints of clashes. error_list contains coordinates of
+        characters which encounters clashes. Picture is for overview only,so
+        it is always have dimensions 320x200.
+        """
+        char_x_size = 1
+        if self._errors_action == "none":
+            return
+
+        image = self._src_image.copy().convert("RGBA")
+        if scaled:
+            image = image.resize((320, 200))
+            char_x_size = 2
+
+        image_map = image.copy()
+        drawable = Draw(image_map)
+
+        for chrx, chry in error_list:
+            drawable.rectangle((chrx * char_x_size, chry,
+                                chrx * char_x_size + 7, chry + 7),
+                               outline="red")
+
+        image = Image.blend(image, image_map, 0.65)
+        del drawable
+
+        if self._errors_action == 'save':
+            file_obj = open(get_modified_fname(self._fname, 'png', '_error.'),
+                            "wb")
+            image.save(file_obj, "png")
+            file_obj.close()
+        else:
+            clashes = image.resize((640, 400))
+            clashes.show()
+
 
 class MultiConverter(FullScreenImage):
     """
@@ -322,6 +365,15 @@ class MultiConverter(FullScreenImage):
     WIDTH = 160
     HEIGHT = 200
     LOGGER_NAME = "MultiConverter"
+
+    def __init__(self, fname, errors_action="none"):
+        """
+        Initialization
+        """
+        super(MultiConverter, self).__init__(fname, errors_action)
+        self._save_map = {"prg": self._save_prg,
+                          "multi": self._save_koala,  # sane default
+                          "koala": self._save_koala}
 
     def _load(self):
         """
@@ -351,30 +403,18 @@ class MultiConverter(FullScreenImage):
 
     def _get_displayer(self):
         """
-        Get displayer for multicolor picture
+        Get displayer for multicolor picture (based on kickassembler example)
         """
-        # XXX: this isn't right
-        border = "%c" % self._get_border()
-        displayer = ["\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x34\x00"
-                     "\x00\x00\x00\x00\x00\x78\xa9", border, "\x8d\x20\xd0\xa9"
-                     "\x00\x8d\x21\xd0\xa9\xbb\x8d\x11\xd0\xa9\x3c\x8d"
-                     "\x18\xd0\x4c\x25\x08"]
+        border = chr(self._get_border())
+        background = chr(self._get_background())
+        displayer = ["\x01\x08\x0b\x08\n\x00\x9e2064\x00\x00\x00\x00\x00\x00"
+                     "\xa98\x8d\x18\xd0\xa9\xd8\x8d\x16\xd0\xa9;\x8d\x11\xd0"
+                     "\xa9", border, "\x8d \xd0\xa9", background, "\x8d!\xd0"
+                     "\xa2\x00\xbd\x00\x1c\x9d\x00\xd8\xbd\x00\x1d\x9d\x00"
+                     "\xd9\xbd\x00\x1e\x9d\x00\xda\xbd\x00\x1f\x9d\x00\xdb"
+                     "\xe8\xd0\xe5LF\x08"]
+
         return "".join(displayer)
-
-    def save(self, filename, format_=None):
-        """
-        Save multicolor picture as prg or in Koala format.
-        """
-        if not self._data.get('bitmap'):
-            if not self._convert():
-                return False
-
-        if os.path.exists(filename):
-            self.log.warning("File `%s' will be overwritten", filename)
-
-        save_map = {"prg": self._save_prg,
-                    "koala": self._save_koala}
-        return save_map[format_](filename)
 
     def _fill_memory(self, pal_map=None):
         """
@@ -436,48 +476,26 @@ class MultiConverter(FullScreenImage):
                                chry * 8 + 4)
 
         if error_list:
-            self._error_image_action(error_list)
+            self._error_image_action(error_list, True)
             return False
 
         self.log.info("Conversion successful.")
         return True
 
-    def _error_image_action(self, error_list):
-        """
-        Create image with hints of clashes. error_list contains coordinates of
-        characters which encounters clashes.
-        """
-        image = self._src_image.copy().convert("RGBA")
-        if self._errors_action == "none":
-            return
-
-        if image.size == (160, 200):
-            image = image.resize((320, 200))
-
-        image_map = image.copy()
-        drawable = Draw(image_map)
-
-        for chrx, chry in error_list:
-            drawable.rectangle((chrx * 2, chry, chrx * 2 + 7, chry + 7),
-                               outline="red")
-
-        image = Image.blend(image, image_map, 0.65)
-        del drawable
-
-        if self._errors_action == 'save':
-            file_obj = open(get_modified_fname(self._fname, 'png', '_error.'),
-                            "wb")
-            image.save(file_obj, "png")
-            file_obj.close()
-        else:
-            clashes = image.resize((640, 400))
-            clashes.show()
-
     def _save_prg(self, filename):
         """
         Save executable version of the picture
         """
-        self.log.warning("Not implemented yet")
+        file_obj = open(filename, "wb")
+        file_obj.write(self._get_displayer())
+        file_obj.write(951 * chr(0))
+        file_obj.write("".join([chr(col) for col in self._data["screen-ram"]]))
+        file_obj.write(3096 * chr(0))
+        file_obj.write("".join([chr(col) for col in self._data["color-ram"]]))
+        file_obj.write(24 * chr(0))
+        file_obj.write("".join([chr(byte) for byte in self._data["bitmap"]]))
+        file_obj.close()
+        self.log.info("Saved executable under `%s' file", filename)
         return True
 
     def _save_koala(self, filename):
@@ -512,6 +530,15 @@ class HiresConverter(FullScreenImage):
     run in emulator.
     """
     LOGGER_NAME = "HiresConverter"
+
+    def __init__(self, fname, errors_action="none"):
+        """
+        Initialization
+        """
+        super(HiresConverter, self).__init__(fname, errors_action)
+        self._save_map = {"prg": self._save_prg,
+                          "hires": self._save_ash,  # make sane default
+                          "art-studio-hires": self._save_ash}
 
     def _get_displayer(self):
         """
@@ -574,75 +601,19 @@ class HiresConverter(FullScreenImage):
         self.log.info("Conversion successful.")
         return True
 
-    def _error_image_action(self, error_list):
-        """
-        Create image with hints of clashes. error_list contains coordinates of
-        characters which encounters clashes.
-        """
-        image = self._src_image.copy().convert("RGBA")
-        if self._errors_action == "none":
-            return
-
-        if image.size == (160, 200):
-            image = image.resize((320, 200))
-
-        image_map = image.copy()
-        drawable = Draw(image_map)
-
-        for chrx, chry in error_list:
-            drawable.rectangle((chrx, chry, chrx + 7, chry + 7), outline="red")
-
-        image = Image.blend(image, image_map, 0.65)
-        del drawable
-
-        if self._errors_action == 'save':
-            file_obj = open(get_modified_fname(self._fname, 'png', '_error.'),
-                            "wb")
-            image.save(file_obj, "png")
-            file_obj.close()
-        else:
-            clashes = image.resize((640, 400))
-            clashes.show()
-
     def _save_prg(self, filename):
         """
         Save executable version of the picture
         """
         file_obj = open(filename, "wb")
-
-        displayer = self._get_displayer()
-        file_obj.write(displayer)
-
-        for _ in range(0x401 - len(displayer)):
-            file_obj.write('%c' % 0x00)
-
-        for color in self._data["screen-ram"]:
-            file_obj.write('%c' % color)
-
-        for _ in range(0x1018):
-            file_obj.write('%c' % 0x00)
-
-        for bits in self._data['bitmap']:
-            file_obj.write('%c' % bits)
-
+        file_obj.write(self._get_displayer())
+        file_obj.write(984 * chr(0))
+        file_obj.write("".join([chr(col) for col in self._data["screen-ram"]]))
+        file_obj.write(4120 * chr(0))
+        file_obj.write("".join([chr(byte) for byte in self._data["bitmap"]]))
         file_obj.close()
         self.log.info("Saved executable under `%s' file", filename)
         return True
-
-    def save(self, filename, format_=None):
-        """
-        Save hires picture as prg or in Art Studio format.
-        """
-        if not self._data.get('bitmap'):
-            if not self._convert():
-                return False
-
-        if os.path.exists(filename):
-            self.log.warning("File `%s' will be overwritten", filename)
-
-        save_map = {"prg": self._save_prg,
-                    "art-studio-hires": self._save_ash}
-        return save_map[format_](filename)
 
     def _save_ash(self, filename):
         """
@@ -696,9 +667,9 @@ def multiconv(arguments):
     Convert to multicolor picture
     """
     mutli_conv = MultiConverter(arguments.filename, arguments.errors)
-    if arguments.border:
+    if arguments.border is not None:
         mutli_conv.set_border_color(arguments.border)
-    if arguments.background:
+    if arguments.background is not None:
         mutli_conv.set_bg_color(arguments.background)
     mutli_conv.log.set_verbose(arguments.verbose, arguments.quiet)
 
@@ -711,7 +682,7 @@ def hiresconv(arguments):
     Convert to hires picture
     """
     hires_conv = HiresConverter(arguments.filename, arguments.errors)
-    if arguments.border:
+    if arguments.border is not None:
         hires_conv.set_border_color(arguments.border)
     hires_conv.log.set_verbose(arguments.verbose, arguments.quiet)
 
@@ -755,7 +726,9 @@ def resolve_name(arguments):
         filename = get_modified_fname(arguments.filename, "prg")
 
     format_ = arguments.format
+
     if arguments.executable:
+
         format_ = "prg"
         _, ext = os.path.splitext(filename)
         if ext != ".prg":
@@ -766,8 +739,10 @@ def resolve_name(arguments):
 
 if __name__ == "__main__":
 
-    F_MAP = {'art-studio-hires': hiresconv,
-             'koala': multiconv}
+    F_MAP = {"art-studio-hires": hiresconv,
+             "hires": hiresconv,
+             "koala": multiconv,
+             "multi": multiconv}
 
     PARSER = ArgumentParser(description=__doc__,
                             formatter_class=RawDescriptionHelpFormatter)
@@ -781,8 +756,8 @@ if __name__ == "__main__":
                         "anything (conversion stops anyway)", default="none",
                         choices=("show", "save", "none"))
     PARSER.add_argument("--format", "-f", help="format of output file, this "
-                        "option is mandatory",
-                        choices=("art-studio-hires", "koala"), required=True)
+                        "option is mandatory", choices=F_MAP.keys(),
+                        required=True)
     PARSER.add_argument("--executable", "-x", help="produce C64 executable as"
                         " 'prg' file", action="store_true")
     PARSER.add_argument("--output", "-o", help="output filename, default: "

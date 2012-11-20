@@ -3,8 +3,8 @@
 Tests for Image2c64 <https://bitbucket.org/gryf/image2c64>
 
 Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
-Date: 2012-11-19
-Version: 1.2
+Date: 2012-11-20
+Version: 1.3
 Licence: BSD
 """
 import os
@@ -15,8 +15,9 @@ from tempfile import mkstemp
 import Image
 Image.Image.show = lambda x: None
 
-from image2c64 import FullScreenImage, HiresConverter, MultiConverter, \
-        Logger, PALETTES, get_modified_fname, best_color_match, resolve_name
+from image2c64 import FullScreenImage, HiresConverter, MultiConverter, Logger
+from image2c64 import PALETTES, get_modified_fname, best_color_match
+from image2c64 import resolve_name
 
 CLASH_H = "test_images/clash.hires.png"
 CLASH_M = "test_images/clash.multi.png"
@@ -146,7 +147,6 @@ class TestFullScreenImage(TestCase):
         obj = FullScreenImage("nofile")
         obj.log.critical = lambda x: None  # suppress log
         self.assertFalse(obj._load())
-
 
     def test__colors_check(self):
         """
@@ -374,7 +374,6 @@ class TestFullScreenImage(TestCase):
         obj.set_bg_color(15)
         self.assertEqual(obj._data.get('background'), 15)
 
-
     def test_set_border_color(self):
         """
         Test set_border_color method
@@ -384,33 +383,63 @@ class TestFullScreenImage(TestCase):
         obj.set_border_color(14)
         self.assertEqual(obj._data.get('border'), 14)
 
-
-class TestHires(TestCase):
-    """
-    Tests for hires conversion
-    """
-
-    def test__check_dimensions(self):
-        """
-        Test of dimensions of the input images
-        """
-        for fname in (CROP_V, CROP_H, CROP_BOTH, CLASH_M2, MULTI, PAL_PEPTO,
-                      PAL_TIMANTHES, PAL_UNKNOWN, PAL_VICE):
-            obj = HiresConverter(fname)
-            obj.log.error = lambda *x: None  # suppress log
-            obj._load()
-            self.assertFalse(obj._check_dimensions())
-
-        for fname in (CLASH_H, CLASH_M, COLORS_256, COLORS_1, COLORS_2,
-                      COLORS_256_U16, HIRES, MULTI_320):
-            obj = HiresConverter(fname)
-            obj._load()
-            self.assertTrue(obj._check_dimensions())
-
     def test__error_image_action(self):
         """
         Test for _error_image_action method
         """
+        error_img = os.path.join(os.path.dirname(__file__),
+                                 get_modified_fname(MULTI, 'png', '_error.'))
+
+        if os.path.exists(error_img):
+            os.unlink(error_img)
+
+        obj = MultiConverter(MULTI)
+        obj._load()
+        result = obj._error_image_action([(0, 0)], True)
+        self.assertEqual(result, None)
+
+        obj._errors_action = "save"
+        result = obj._error_image_action([(0, 0)], True)
+        self.assertTrue(os.path.exists(error_img))
+        os.unlink(error_img)
+
+        # does nothing. maybe some refactoring needed for _error_image_action
+        # method?
+        obj._errors_action = "show"
+        obj._error_image_action([(0, 0)], True)
+
+        obj = MultiConverter(MULTI)
+        obj._load()
+        obj._errors_action = "show"
+        obj._error_image_action([(0, 0)], True)
+
+        error_img = os.path.join(os.path.dirname(__file__),
+                                 get_modified_fname(MULTI_320, 'png',
+                                                    '_error.'))
+
+        if os.path.exists(error_img):
+            os.unlink(error_img)
+
+        obj = MultiConverter(MULTI_320)
+        obj._load()
+        result = obj._error_image_action([(0, 0)])
+        self.assertEqual(result, None)
+
+        obj._errors_action = "save"
+        result = obj._error_image_action([(0, 0)])
+        self.assertTrue(os.path.exists(error_img))
+        os.unlink(error_img)
+
+        # does nothing. maybe some refactoring needed for _error_image_action
+        # method?
+        obj._errors_action = "show"
+        obj._error_image_action([(0, 0)])
+
+        obj = MultiConverter(MULTI_320)
+        obj._load()
+        obj._errors_action = "show"
+        obj._error_image_action([(0, 0)])
+
         error_img = os.path.join(os.path.dirname(__file__),
                                  get_modified_fname(HIRES, 'png', '_error.'))
 
@@ -437,6 +466,29 @@ class TestHires(TestCase):
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
 
+
+class TestHires(TestCase):
+    """
+    Tests for hires conversion
+    """
+
+    def test__check_dimensions(self):
+        """
+        Test of dimensions of the input images
+        """
+        for fname in (CROP_V, CROP_H, CROP_BOTH, CLASH_M2, MULTI, PAL_PEPTO,
+                      PAL_TIMANTHES, PAL_UNKNOWN, PAL_VICE):
+            obj = HiresConverter(fname)
+            obj.log.error = lambda *x: None  # suppress log
+            obj._load()
+            self.assertFalse(obj._check_dimensions())
+
+        for fname in (CLASH_H, CLASH_M, COLORS_256, COLORS_1, COLORS_2,
+                      COLORS_256_U16, HIRES, MULTI_320):
+            obj = HiresConverter(fname)
+            obj._load()
+            self.assertTrue(obj._check_dimensions())
+
     def test__fill_memory(self):
         """
         Test for _fill_memory method
@@ -444,6 +496,14 @@ class TestHires(TestCase):
         obj = HiresConverter(HIRES)
         obj._load()
         hist = obj._src_image.histogram()
+        obj._colors_check(hist)
+        palette_map = obj._get_best_palette_map()
+        self.assertEqual(obj._fill_memory(pal_map=palette_map), True)
+
+        obj = HiresConverter(COLORS_1)
+        obj._load()
+        hist = obj._src_image.histogram()
+        obj.log.warn = lambda x, y: None  # suppress log
         obj._colors_check(hist)
         palette_map = obj._get_best_palette_map()
         self.assertEqual(obj._fill_memory(pal_map=palette_map), True)
@@ -471,24 +531,12 @@ class TestHires(TestCase):
         obj.set_border_color(10)
         self.assertEqual(obj._get_displayer(), "".join(displayer))
 
-    def test__save_ash(self):
-        """
-        Test for _save_ash method - covered by save method
-        """
-        return
-
-    def test__save_prg(self):
-        """
-        Test for _save_prg method - covered by save method
-        """
-        return
-
     def test_save(self):
         """
-        Test for save method
+        Test for save method (and all _save... submethods)
         """
-        fd, fname = mkstemp(suffix=".prg")
-        os.close(fd)
+        fdesc, fname = mkstemp(suffix=".prg")
+        os.close(fdesc)
 
         obj = HiresConverter(HIRES)
         obj.log.warning = lambda *x: None  # suppress log
@@ -498,8 +546,8 @@ class TestHires(TestCase):
         self.assertEqual(os.stat(fname).st_size, 14145)
         os.unlink(fname)
 
-        fd, fname = mkstemp(suffix=".prg")
-        os.close(fd)
+        fdesc, fname = mkstemp(suffix=".prg")
+        os.close(fdesc)
 
         obj = HiresConverter(HIRES)
         obj.log.warning = lambda *x: None  # suppress log
@@ -510,8 +558,8 @@ class TestHires(TestCase):
         os.unlink(fname)
 
         obj = HiresConverter(CLASH_H)
-        obj.log.warning = lambda *x: None  # suppress log
         self.assertEqual(obj.save(fname, "art-studio-hires"), False)
+
 
 class TestMulticolor(TestCase):
     """
@@ -553,24 +601,24 @@ class TestMulticolor(TestCase):
 
     def test_save(self):
         """
-        Test for save method
+        Test for save methods
         """
-        fd, fname = mkstemp(suffix=".prg")
-        os.close(fd)
+        fdesc, fname = mkstemp(suffix=".prg")
+        os.close(fdesc)
+        os.unlink(fname)
 
         obj = MultiConverter(MULTI_320)
-        obj.log.warning = lambda *x: None  # suppress log
         self.assertEqual(obj.save(fname, "prg"), True)
 
         self.assertTrue(os.path.exists(fname))
-        self.assertEqual(os.stat(fname).st_size, 0)
+        self.assertEqual(os.stat(fname).st_size, 14145)
         os.unlink(fname)
 
-        fd, fname = mkstemp(suffix=".prg")
-        os.close(fd)
+        fdesc, fname = mkstemp(suffix=".prg")
+        os.close(fdesc)
+        os.unlink(fname)
 
         obj = MultiConverter(MULTI)
-        obj.log.warning = lambda *x: None  # suppress log
         self.assertEqual(obj.save(fname, "koala"), True)
 
         self.assertTrue(os.path.exists(fname))
@@ -578,7 +626,9 @@ class TestMulticolor(TestCase):
         os.unlink(fname)
 
         obj = MultiConverter(CLASH_M)
-        obj.log.warning = lambda *x: None  # suppress log
+        self.assertEqual(obj.save(fname, "koala"), False)
+
+        obj = MultiConverter(CLASH_M2)
         self.assertEqual(obj.save(fname, "koala"), False)
 
 
@@ -631,10 +681,20 @@ class TestMisc(TestCase):
         """
         Test resolve_name function
         """
-        class obj(object):
-            pass
+        class Obj(object):
+            """
+            Mock args class
+            """
+            def __init__(self):
+                """
+                Initialization
+                """
+                self.filename = "foo"
+                self.format = "hires"
+                self.output = None
+                self.executable = False
 
-        args = obj()
+        args = Obj()
         args.filename = "foo"
         args.format = "hires"
         args.output = None
