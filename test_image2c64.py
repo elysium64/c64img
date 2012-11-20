@@ -1,15 +1,11 @@
 #!/usr/bin/env python
 """
-Image2c64 formar converter v.1.0
+Tests for Image2c64 <https://bitbucket.org/gryf/image2c64>
 
-Inspired on PNG2HIRES v0.2 gfx format converter /enthusi (onslaught)
-
-As an input 320x200 (multicolor or hires) or 160x200 (mutlicolor) picture is
-expected. Mutlicolor pictures will be scaled down to 160x200. Picture will be
-converted to 16 colors. During that process some information can be lost, if
-used more than 16 colors.
-
-2012-11-18 by gryf/esm
+Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
+Date: 2012-11-19
+Version: 1.2
+Licence: BSD
 """
 import os
 from unittest import TestCase, main
@@ -320,7 +316,7 @@ class TestFullScreenImage(TestCase):
         """
         obj = FullScreenImage(HIRES)
         obj._load()
-        self.assertRaises(NotImplementedError, obj.save)
+        self.assertRaises(NotImplementedError, obj.save, "fn")
 
     def test_attributes(self):
         """
@@ -538,6 +534,53 @@ class TestMulticolor(TestCase):
             obj._load()
             self.assertTrue(obj._check_dimensions(), fname)
 
+    def test__load(self):
+        """
+        Test custom load function
+        """
+        obj = MultiConverter(MULTI)
+        self.assertEqual(obj._load(), True)
+        self.assertEqual(obj._src_image.size[0], 160)
+
+        obj = MultiConverter(MULTI_320)
+        self.assertEqual(obj._load(), True)
+        self.assertEqual(obj._src_image.size[0], 160)
+
+        obj = MultiConverter("nofile")
+        obj.log.critical = lambda x: None  # suppress log
+        self.assertEqual(obj._load(), False)
+        self.assertEqual(obj._src_image, None)
+
+    def test_save(self):
+        """
+        Test for save method
+        """
+        fd, fname = mkstemp(suffix=".prg")
+        os.close(fd)
+
+        obj = MultiConverter(MULTI_320)
+        obj.log.warning = lambda *x: None  # suppress log
+        self.assertEqual(obj.save(fname, "prg"), True)
+
+        self.assertTrue(os.path.exists(fname))
+        self.assertEqual(os.stat(fname).st_size, 0)
+        os.unlink(fname)
+
+        fd, fname = mkstemp(suffix=".prg")
+        os.close(fd)
+
+        obj = MultiConverter(MULTI)
+        obj.log.warning = lambda *x: None  # suppress log
+        self.assertEqual(obj.save(fname, "koala"), True)
+
+        self.assertTrue(os.path.exists(fname))
+        self.assertEqual(os.stat(fname).st_size, 10004)
+        os.unlink(fname)
+
+        obj = MultiConverter(CLASH_M)
+        obj.log.warning = lambda *x: None  # suppress log
+        self.assertEqual(obj.save(fname, "koala"), False)
+
 
 class TestMisc(TestCase):
     """
@@ -587,20 +630,6 @@ class TestMisc(TestCase):
     def test_resolve_name(self):
         """
         Test resolve_name function
-        def resolve_name(args):
-            if args.output:
-                filename = args.output
-            else:
-                filename = get_modified_fname(args.filename, "prg")
-
-            format_ = args.format
-            if args.executable:
-                format_ = "prg"
-                _, ext = os.path.splitext(filename)
-                if ext != ".prg":
-                    filename = get_modified_fname(filename, "prg")
-
-            return filename, format_
         """
         class obj(object):
             pass

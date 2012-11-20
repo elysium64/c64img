@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Image2c64 formar converter v.1.0
+Image2c64 <https://bitbucket.org/gryf/image2c64>
+
+This program converts virtually any image supported by PIL to C64 hires or
+multicolor formats. Best results are achived with filetypes PNG or GIF.
 
 Inspired on PNG2HIRES v0.2 gfx format converter /enthusi (onslaught)
 
@@ -10,7 +13,18 @@ expected. Mutlicolor pictures will be scaled down to 160x200. Picture will be
 converted to 16 colors. During that process some information can be lost, if
 used more than 16 colors.
 
-2012-11-18 by gryf/esm
+Requirements:
+    - Python 2.7
+    - Image (PIL) module <http://www.pythonware.com/products/pil/>
+
+Changes:
+    2012-11-19 Added multicolor support, changes to the docstrings
+    2012-11-18 First public release
+
+Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
+Date: 2012-11-19
+Version: 1.1
+Licence: BSD
 """
 import sys
 import os
@@ -111,7 +125,7 @@ class Logger(object):
 
 class FullScreenImage(object):
     """
-    Class represents full-screen image in uspecified C64 format
+    Class represents full-screen image in unspecified C64 format
     """
     WIDTH = 320
     HEIGHT = 200
@@ -172,12 +186,11 @@ class FullScreenImage(object):
 
         return False
 
-
     def _find_most_freq_color(self, histogram, palette_map):
         """
         Check for the most frequent color on the picture. Can be used to
         auto detect background/border colors.
-        Value remembered in attribite _data['most_freq_color'] is an
+        Value remembered in attribute _data['most_freq_color'] is an
         index in the C64 palette (NOT the source image palette!).
         """
         pal = self._src_image.getpalette()
@@ -223,19 +236,19 @@ class FullScreenImage(object):
 
     def _get_palette(self):
         """
-        Return source image palette as rgb tuples
+        Return source image palette as RGB tuples
         """
         pal = self._src_image.getpalette()
-        return [(pal[i], pal[i+1], pal[i+2]) for i in range(0, 16 *3, 3)]
+        return [(pal[i], pal[i + 1], pal[i + 2]) for i in range(0, 16 * 3, 3)]
 
     def _fill_memory(self, pal_map=None):
         """
-        Create bitmap/colormap/videoram colors if needed. Should be
+        Create bitmap/screen-ram/color-ram colors if needed. Should be
         implemented in concrete implementation.
         """
         raise NotImplementedError()
 
-    def save(self, format_=None):
+    def save(self, filename, format_=None):
         """
         Save picture in one of the formats or as an executable prg. Should be
         implemented in concrete implementation.
@@ -284,25 +297,42 @@ class FullScreenImage(object):
         Return border color index
         """
         border = self._data.get('border')
-        if border:
-            border = border
-        else:
+        if border is None:
             border = self._data.get('most_freq_color', 0)
 
         return border
 
+    def _get_background(self):
+        """
+        Return background color index
+        """
+        background = self._data.get("background")
+        if background is None:
+            background = self._data.get("most_freq_color", 0)
+
+        return background
+
 
 class MultiConverter(FullScreenImage):
     """
-    Convert bitmap grafix in png/gif/probably other formats supported by
-    PIL[1] prepared as multicolor image into executable C64 prg file suitable
+    Convert bitmap graphic in png/gif/probably other formats supported by
+    PIL prepared as multicolor image into executable C64 prg file suitable
     to transfer to real thing or run in emulator.
-
-    [1] http://www.pythonware.com/products/pil/
     """
     WIDTH = 160
     HEIGHT = 200
     LOGGER_NAME = "MultiConverter"
+
+    def _load(self):
+        """
+        Load source image and store it under _src_image attribute.
+        Shrink it if needed to 160x200 pixels.
+        """
+        if super(MultiConverter, self)._load():
+            if self._src_image.size == (320, 200):
+                self._src_image = self._src_image.resize((160, 200))
+            return True
+        return False
 
     def _check_dimensions(self):
         """
@@ -319,14 +349,167 @@ class MultiConverter(FullScreenImage):
             self.log.error("Wrong picture dimensions: %dx%d", width, height)
         return result
 
+    def _get_displayer(self):
+        """
+        Get displayer for multicolor picture
+        """
+        # XXX: this isn't right
+        border = "%c" % self._get_border()
+        displayer = ["\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x34\x00"
+                     "\x00\x00\x00\x00\x00\x78\xa9", border, "\x8d\x20\xd0\xa9"
+                     "\x00\x8d\x21\xd0\xa9\xbb\x8d\x11\xd0\xa9\x3c\x8d"
+                     "\x18\xd0\x4c\x25\x08"]
+        return "".join(displayer)
+
+    def save(self, filename, format_=None):
+        """
+        Save multicolor picture as prg or in Koala format.
+        """
+        if not self._data.get('bitmap'):
+            if not self._convert():
+                return False
+
+        if os.path.exists(filename):
+            self.log.warning("File `%s' will be overwritten", filename)
+
+        save_map = {"prg": self._save_prg,
+                    "koala": self._save_koala}
+        return save_map[format_](filename)
+
+    def _fill_memory(self, pal_map=None):
+        """
+        Create bitmap, screen-ram, color-ram and error map as a picture if
+        needed.
+        """
+        self._data["bitmap"] = []
+        self._data["screen-ram"] = []
+        self._data["color-ram"] = []
+        self._data["background"] = self._get_background()
+        pairs = ((0, 1), (1, 0), (1, 1))
+
+        error_list = []
+
+        for chry, chrx in [(chry, chrx)
+                           for chry in range(0, self._src_image.size[1], 8)
+                           for chrx in range(0, self._src_image.size[0], 4)]:
+
+            box = self._src_image.crop((chrx, chry,
+                                        chrx + 4, chry + 8)).convert("RGB")
+            char_colors = []
+
+            for y__ in range(8):
+                line = 0
+                clash = False
+                for x__ in range(4):
+                    bits = None
+                    actual_color = pal_map[box.getpixel((x__, y__))]
+                    if actual_color == self._data["background"]:
+                        bits = (0, 0)
+                    elif actual_color not in [idx[0] for idx in char_colors]:
+                        if len(char_colors) == 3:
+                            clash = True
+                            bits = (0, 0)
+                        else:
+                            char_colors.append((actual_color,
+                                                pairs[len(char_colors)]))
+
+                    if not bits:
+                        bits = [idx[1] for idx in char_colors if
+                                idx[0] == actual_color][0]
+
+                    line += bits[0] * 2 ** (7 - x__ * 2)
+                    line += bits[1] * 2 ** (7 - (x__ * 2 + 1))
+
+                self._data["bitmap"].append(line)
+
+            while len(char_colors) < 3:
+                char_colors.append((self._data["background"], (0, 0)))
+
+            self._data["screen-ram"].append(char_colors[0][0] * 16 +
+                                            char_colors[1][0])
+            self._data["color-ram"].append(char_colors[2][0])
+
+            if clash:
+                error_list.append((chrx, chry))
+                self.log.error("Too many colors per block in char %d, %d near"
+                               " x=%d, y=%d.", chrx, chry, chrx * 8 + 4,
+                               chry * 8 + 4)
+
+        if error_list:
+            self._error_image_action(error_list)
+            return False
+
+        self.log.info("Conversion successful.")
+        return True
+
+    def _error_image_action(self, error_list):
+        """
+        Create image with hints of clashes. error_list contains coordinates of
+        characters which encounters clashes.
+        """
+        image = self._src_image.copy().convert("RGBA")
+        if self._errors_action == "none":
+            return
+
+        if image.size == (160, 200):
+            image = image.resize((320, 200))
+
+        image_map = image.copy()
+        drawable = Draw(image_map)
+
+        for chrx, chry in error_list:
+            drawable.rectangle((chrx * 2, chry, chrx * 2 + 7, chry + 7),
+                               outline="red")
+
+        image = Image.blend(image, image_map, 0.65)
+        del drawable
+
+        if self._errors_action == 'save':
+            file_obj = open(get_modified_fname(self._fname, 'png', '_error.'),
+                            "wb")
+            image.save(file_obj, "png")
+            file_obj.close()
+        else:
+            clashes = image.resize((640, 400))
+            clashes.show()
+
+    def _save_prg(self, filename):
+        """
+        Save executable version of the picture
+        """
+        self.log.warning("Not implemented yet")
+        return True
+
+    def _save_koala(self, filename):
+        """
+        Save as Koala format
+        """
+        file_obj = open(filename, "wb")
+        file_obj.write("%c%c" % (0x00, 0x60))
+
+        for char in self._data['bitmap']:
+            file_obj.write("%c" % char)
+
+        for char in self._data["screen-ram"]:
+            file_obj.write("%c" % char)
+
+        for char in self._data["color-ram"]:
+            file_obj.write("%c" % char)
+
+        file_obj.write(chr(self._data["background"]))
+
+        border = self._get_border()
+        file_obj.write("%c" % border)
+        file_obj.close()
+        self.log.info("Saved in Koala format under `%s' file", filename)
+        return True
+
 
 class HiresConverter(FullScreenImage):
     """
-    Convert bitmap grafix in png/gif/probably other formats supported by
-    PIL[1] into executable C64 prg file suitable to transfer to real thing or
+    Convert bitmap graphic in png/gif/probably other formats supported by
+    PIL into executable C64 prg file suitable to transfer to real thing or
     run in emulator.
-
-    [1] http://www.pythonware.com/products/pil/
     """
     LOGGER_NAME = "HiresConverter"
 
@@ -343,10 +526,10 @@ class HiresConverter(FullScreenImage):
 
     def _fill_memory(self, pal_map=None):
         """
-        Create bitmap file and error map as a picture if needed.
+        Create bitmap/screen and error map as a picture if needed.
         """
         self._data["bitmap"] = []
-        self._data["screen"] = []
+        self._data["screen-ram"] = []
 
         error_list = []
 
@@ -376,7 +559,7 @@ class HiresConverter(FullScreenImage):
             if len(char_col) == 1:
                 char_col.append(char_col[0])
 
-            self._data["screen"].append(char_col[1] * 16 + char_col[0])
+            self._data["screen-ram"].append(char_col[1] * 16 + char_col[0])
             if len(char_col) > 2:
                 clash = 1
                 error_list.append((chrx, chry))
@@ -430,13 +613,13 @@ class HiresConverter(FullScreenImage):
         displayer = self._get_displayer()
         file_obj.write(displayer)
 
-        for unused in range(0x401 - len(displayer)):
+        for _ in range(0x401 - len(displayer)):
             file_obj.write('%c' % 0x00)
 
-        for color in self._data['screen']:
+        for color in self._data["screen-ram"]:
             file_obj.write('%c' % color)
 
-        for unused in range(0x1018):
+        for _ in range(0x1018):
             file_obj.write('%c' % 0x00)
 
         for bits in self._data['bitmap']:
@@ -471,7 +654,7 @@ class HiresConverter(FullScreenImage):
         for char in self._data['bitmap']:
             file_obj.write("%c" % char)
 
-        for char in self._data['screen']:
+        for char in self._data["screen-ram"]:
             file_obj.write("%c" % char)
 
         border = self._get_border()
@@ -508,17 +691,32 @@ def get_modified_fname(fname, ext, suffix='.'):
     return "".join([path, suffix, ext])
 
 
-def multiconv(args):
-    raise NotImplementedError
+def multiconv(arguments):
+    """
+    Convert to multicolor picture
+    """
+    mutli_conv = MultiConverter(arguments.filename, arguments.errors)
+    if arguments.border:
+        mutli_conv.set_border_color(arguments.border)
+    if arguments.background:
+        mutli_conv.set_bg_color(arguments.background)
+    mutli_conv.log.set_verbose(arguments.verbose, arguments.quiet)
 
-def hiresconv(args):
-    hc = HiresConverter(args.filename, args.errors)
-    if args.border:
-        hc.set_border_color(args.border)
-    hc.log.set_verbose(args.verbose, args.quiet)
+    filename, format_ = resolve_name(arguments)
+    mutli_conv.save(filename, format_)
 
-    filename, format_ = resolve_name(args)
-    hc.save(filename, format_)
+
+def hiresconv(arguments):
+    """
+    Convert to hires picture
+    """
+    hires_conv = HiresConverter(arguments.filename, arguments.errors)
+    if arguments.border:
+        hires_conv.set_border_color(arguments.border)
+    hires_conv.log.set_verbose(arguments.verbose, arguments.quiet)
+
+    filename, format_ = resolve_name(arguments)
+    hires_conv.save(filename, format_)
 
 
 def best_color_match(orig_color, colors):
@@ -532,7 +730,7 @@ def best_color_match(orig_color, colors):
     rgb_diff = 195075  # arbitrary number of maximum difference
     for idx, (pal_r, pal_g, pal_b) in enumerate(colors):
         partial_delta = (src_r - pal_r) ** 2 + \
-                (src_g - pal_g) ** 2 + (src_b - pal_b) ** 2
+                        (src_g - pal_g) ** 2 + (src_b - pal_b) ** 2
 
         if partial_delta == 0:  # bingo
             delta = partial_delta
@@ -547,17 +745,17 @@ def best_color_match(orig_color, colors):
     return color2use, delta
 
 
-def resolve_name(args):
+def resolve_name(arguments):
     """
     Return right name and format for an output file.
     """
-    if args.output:
-        filename = args.output
+    if arguments.output:
+        filename = arguments.output
     else:
-        filename = get_modified_fname(args.filename, "prg")
+        filename = get_modified_fname(arguments.filename, "prg")
 
-    format_ = args.format
-    if args.executable:
+    format_ = arguments.format
+    if arguments.executable:
         format_ = "prg"
         _, ext = os.path.splitext(filename)
         if ext != ".prg":
@@ -568,35 +766,35 @@ def resolve_name(args):
 
 if __name__ == "__main__":
 
-    converter = {'art-studio-hires': hiresconv,
-                 'koala': multiconv}
+    F_MAP = {'art-studio-hires': hiresconv,
+             'koala': multiconv}
 
-    parser = ArgumentParser(description=__doc__,
-                         formatter_class=RawDescriptionHelpFormatter)
-    parser.add_argument("--border", "-b", help="set color number for border, "
-                       "default: most frequent color", type=int,
-                       choices=range(16))
-    parser.add_argument("--background", "-g", help="set color number for "
+    PARSER = ArgumentParser(description=__doc__,
+                            formatter_class=RawDescriptionHelpFormatter)
+    PARSER.add_argument("--border", "-b", help="set color number for border, "
+                        "default: most frequent color", type=int,
+                        choices=range(16))
+    PARSER.add_argument("--background", "-g", help="set color number for "
                         "background", type=int, choices=range(16))
-    parser.add_argument("--errors", "-e", help="save errormap under the "
-                     "same name with '_error' suffix, show it or don't do "
-                     "anything (conversion stops anyway)", default="none",
-                     choices=("show", "save", "none"))
-    parser.add_argument("--format", "-f", help="format of output file, this "
+    PARSER.add_argument("--errors", "-e", help="save errormap under the "
+                        "same name with '_error' suffix, show it or don't do "
+                        "anything (conversion stops anyway)", default="none",
+                        choices=("show", "save", "none"))
+    PARSER.add_argument("--format", "-f", help="format of output file, this "
                         "option is mandatory",
                         choices=("art-studio-hires", "koala"), required=True)
-    parser.add_argument("--executable", "-x", help="produce C64 executable as"
+    PARSER.add_argument("--executable", "-x", help="produce C64 executable as"
                         " 'prg' file", action="store_true")
-    parser.add_argument("--output", "-o", help="output filename, default: "
-                        "same filename as original with apropriate extension")
-    parser.add_argument('filename')
+    PARSER.add_argument("--output", "-o", help="output filename, default: "
+                        "same filename as original with appropriate extension")
+    PARSER.add_argument('filename')
 
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--quiet", "-q", help='please, be quiet. Adding more '
+    GROUP = PARSER.add_mutually_exclusive_group()
+    GROUP.add_argument("--quiet", "-q", help='please, be quiet. Adding more '
                        '"q" will decrease verbosity', action="count",
                        default=0)
-    group.add_argument("--verbose", "-v", help='be verbose. Adding more "v" '
+    GROUP.add_argument("--verbose", "-v", help='be verbose. Adding more "v" '
                        'will increase verbosity', action="count", default=0)
 
-    args = parser.parse_args()
-    converter[args.format](args)
+    ARGS = PARSER.parse_args()
+    F_MAP[ARGS.format](ARGS)
