@@ -372,6 +372,7 @@ class MultiConverter(FullScreenImage):
         """
         super(MultiConverter, self).__init__(fname, errors_action)
         self._save_map = {"prg": self._save_prg,
+                          "raw": self._save_raw,
                           "multi": self._save_koala,  # sane default
                           "koala": self._save_koala}
 
@@ -522,6 +523,29 @@ class MultiConverter(FullScreenImage):
         self.log.info("Saved in Koala format under `%s' file", filename)
         return True
 
+    def _save_raw(self, filename):
+        """
+        Save as raw data
+        """
+
+        with open(filename + "_bitmap.raw", "w") as file_obj:
+            for char in self._data['bitmap']:
+                file_obj.write("%c" % char)
+
+        with open(filename + "_screen.raw", "w") as file_obj:
+            for char in self._data["screen-ram"]:
+                file_obj.write("%c" % char)
+
+        with open(filename + "_color-ram.raw", "w") as file_obj:
+            for char in self._data["color-ram"]:
+                file_obj.write("%c" % char)
+
+        with open(filename + "_bg.raw", "w") as file_obj:
+            file_obj.write(chr(self._data["background"]))
+
+        self.log.info("Saved in raw format under `%s_*' files", filename)
+        return True
+
 
 class HiresConverter(FullScreenImage):
     """
@@ -537,6 +561,7 @@ class HiresConverter(FullScreenImage):
         """
         super(HiresConverter, self).__init__(fname, errors_action)
         self._save_map = {"prg": self._save_prg,
+                          "raw": self._save_raw,
                           "hires": self._save_ash,  # make sane default
                           "art-studio-hires": self._save_ash}
 
@@ -634,6 +659,21 @@ class HiresConverter(FullScreenImage):
         file_obj.close()
         self.log.info("Saved in Art Studio Hires format under `%s' file",
                       filename)
+        return True
+
+    def _save_raw(self, filename):
+        """
+        Save raw data
+        """
+        with open(filename + "_screen.raw", "wb") as file_obj:
+            file_obj.write("".join([chr(col)
+                                    for col in self._data["screen-ram"]]))
+
+        with open(filename + "_bitmap.raw", "wb") as file_obj:
+            file_obj.write("".join([chr(byte)
+                                    for byte in self._data["bitmap"]]))
+
+        self.log.info("Saved raw data under `%s_*' files", filename)
         return True
 
     def _check_dimensions(self):
@@ -734,6 +774,11 @@ def resolve_name(arguments):
         if ext != ".prg":
             filename = get_modified_fname(filename, "prg")
 
+    if arguments.raw:
+
+        format_ = "raw"
+        filename, ext = os.path.splitext(filename)
+
     return filename, format_
 
 
@@ -746,29 +791,33 @@ if __name__ == "__main__":
 
     PARSER = ArgumentParser(description=__doc__,
                             formatter_class=RawDescriptionHelpFormatter)
-    PARSER.add_argument("--border", "-b", help="set color number for border, "
+    PARSER.add_argument("-b", "--border", help="set color number for border, "
                         "default: most frequent color", type=int,
                         choices=range(16))
-    PARSER.add_argument("--background", "-g", help="set color number for "
+    PARSER.add_argument("-g", "--background", help="set color number for "
                         "background", type=int, choices=range(16))
-    PARSER.add_argument("--errors", "-e", help="save errormap under the "
+    PARSER.add_argument("-e", "--errors", help="save errormap under the "
                         "same name with '_error' suffix, show it or don't do "
                         "anything (conversion stops anyway)", default="none",
                         choices=("show", "save", "none"))
-    PARSER.add_argument("--format", "-f", help="format of output file, this "
+    PARSER.add_argument("-f", "--format", help="format of output file, this "
                         "option is mandatory", choices=F_MAP.keys(),
                         required=True)
-    PARSER.add_argument("--executable", "-x", help="produce C64 executable as"
-                        " 'prg' file", action="store_true")
-    PARSER.add_argument("--output", "-o", help="output filename, default: "
+    GROUP = PARSER.add_mutually_exclusive_group()
+    GROUP.add_argument("-x", "--executable", help="produce C64 executable as"
+                       " 'prg' file", action="store_true")
+    GROUP.add_argument("-r", "--raw", help="produce raw files with only the "
+                       "data. Useful for include in assemblers",
+                       action="store_true")
+    PARSER.add_argument("-o", "--output", help="output filename, default: "
                         "same filename as original with appropriate extension")
     PARSER.add_argument('filename')
 
     GROUP = PARSER.add_mutually_exclusive_group()
-    GROUP.add_argument("--quiet", "-q", help='please, be quiet. Adding more '
+    GROUP.add_argument("-q", "--quiet", help='please, be quiet. Adding more '
                        '"q" will decrease verbosity', action="count",
                        default=0)
-    GROUP.add_argument("--verbose", "-v", help='be verbose. Adding more "v" '
+    GROUP.add_argument("-v", "--verbose", help='be verbose. Adding more "v" '
                        'will increase verbosity', action="count", default=0)
 
     ARGS = PARSER.parse_args()

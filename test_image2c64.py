@@ -560,6 +560,17 @@ class TestHires(TestCase):
         obj = HiresConverter(CLASH_H)
         self.assertEqual(obj.save(fname, "art-studio-hires"), False)
 
+        obj = HiresConverter(HIRES)
+        self.assertEqual(obj.save(fname, "raw"), True)
+
+        self.assertTrue(os.path.exists(fname + "_bitmap.raw"))
+        self.assertTrue(os.path.exists(fname + "_screen.raw"))
+
+        self.assertEqual(os.stat(fname + "_bitmap.raw").st_size, 8000)
+        self.assertEqual(os.stat(fname + "_screen.raw").st_size, 1000)
+        os.unlink(fname + "_bitmap.raw")
+        os.unlink(fname + "_screen.raw")
+
 
 class TestMulticolor(TestCase):
     """
@@ -631,6 +642,29 @@ class TestMulticolor(TestCase):
         obj = MultiConverter(CLASH_M2)
         self.assertEqual(obj.save(fname, "koala"), False)
 
+        obj = MultiConverter(MULTI)
+        self.assertEqual(obj.save(fname, "raw"), True)
+
+        self.assertTrue(os.path.exists(fname + "_bg.raw"))
+        self.assertTrue(os.path.exists(fname + "_bitmap.raw"))
+        self.assertTrue(os.path.exists(fname + "_color-ram.raw"))
+        self.assertTrue(os.path.exists(fname + "_screen.raw"))
+
+        self.assertEqual(os.stat(fname + "_bg.raw").st_size, 1)
+        self.assertEqual(os.stat(fname + "_bitmap.raw").st_size, 8000)
+        self.assertEqual(os.stat(fname + "_color-ram.raw").st_size, 1000)
+        self.assertEqual(os.stat(fname + "_screen.raw").st_size, 1000)
+        os.unlink(fname + "_bg.raw")
+        os.unlink(fname + "_bitmap.raw")
+        os.unlink(fname + "_color-ram.raw")
+        os.unlink(fname + "_screen.raw")
+
+        obj = MultiConverter(CLASH_M)
+        self.assertEqual(obj.save(fname, "raw"), False)
+
+        obj = MultiConverter(CLASH_M2)
+        self.assertEqual(obj.save(fname, "raw"), False)
+
 
 class TestMisc(TestCase):
     """
@@ -667,9 +701,9 @@ class TestMisc(TestCase):
 
         # quite distorted: after all we got gray - which have values
         # 68, 68, 68
-        idx, delta = best_color_match((86, 66, 86), PALETTES['Pepto'])
+        idx, delta = best_color_match((86, 86, 86), PALETTES['Pepto'])
         self.assertEqual(idx, 11)
-        self.assertEqual(delta, 652)
+        self.assertEqual(delta, 972)
 
         # one value lower and now we got dark gray - which have values
         # 68, 68, 68
@@ -693,6 +727,7 @@ class TestMisc(TestCase):
                 self.format = "hires"
                 self.output = None
                 self.executable = False
+                self.raw = False
 
         args = Obj()
         args.filename = "foo"
@@ -706,6 +741,17 @@ class TestMisc(TestCase):
 
         args.executable = True
         self.assertEqual(resolve_name(args), ("bar.prg", "prg"))
+
+        args.executable = False
+        args.raw = True
+        args.output = "bar.prg"
+        self.assertEqual(resolve_name(args), ("bar", "raw"))
+
+        args.output = "foo.hires"
+        self.assertEqual(resolve_name(args), ("foo", "raw"))
+
+        args.output = "foo.hires.png"
+        self.assertEqual(resolve_name(args), ("foo.hires", "raw"))
 
 
 if __name__ == "__main__":
