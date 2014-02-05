@@ -1,39 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Image2c64 <https://bitbucket.org/gryf/image2c64>
-
-This program converts virtually any image supported by PIL to C64 hires or
-multicolor formats. Best results are achived with filetypes PNG or GIF.
-
-Inspired on PNG2HIRES v0.2 gfx format converter /enthusi (onslaught)
-
-As an input 320x200 (multicolor or hires) or 160x200 (mutlicolor) picture is
-expected. Mutlicolor pictures will be scaled down to 160x200. Picture will be
-converted to 16 colors. During that process some information can be lost, if
-used more than 16 colors.
-
-Requirements:
-    - Python 2.7
-    - Image (PIL) module <http://www.pythonware.com/products/pil/>
-
-Changes:
-    2012-11-20 Added executable output format for multicolor
-    2012-11-19 Added multicolor support, changes to the docstrings
-    2012-11-18 First public release
-
-Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
-Date: 2012-11-20
-Version: 1.2
-Licence: BSD
+image2c64 v2.0 converts virtually any image supported by Pillow to C64 hires
+or multicolor formats. Best results are achived with filetypes PNG or GIF.
 """
 import sys
 import os
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import logging
+from collections import Counter
 
-import Image
-from ImageDraw import Draw
+from PIL import Image
+from PIL.ImageDraw import Draw
 
 
 # Palettes are organized with original C64 order:
@@ -124,6 +102,156 @@ class Logger(object):
         self._log.setLevel(logging.WARNING)
 
 
+class Char(object):
+    """
+    Char implementation
+    """
+
+    def __init__(self, background, prev=None):
+        """
+        Init. prev is the Char object which represents the same character in
+        previous picture
+        """
+        self.background = background
+        self.clash = False
+        self.colors = {}
+        self.max_colors = 2
+        self.pixels = {}
+        self.prev = prev
+
+    def analyze_color_map(self):
+        """
+        Check for the optimal color placement in char. This method may be run
+        only on not clashed chars. Background color should be always
+        available.
+        """
+        self.colors[self.background] = (0, 0)
+
+        if self._check_clash():
+            return
+
+        if self.prev and self.prev.clash:
+            return
+
+        colors = Counter([x for x in self.pixels.values()])
+        self._compare_colors(colors)
+
+    def get_binary_data(self):
+        """
+        Return binary data for the char
+        """
+        raise NotImplementedError
+
+    def _check_clash(self):
+        """
+        Check color clash. max_colors is the maximum colors per char object
+        """
+        if len(set([x for x in self.pixels.values()])) > self.max_colors:
+            self.clash = True
+        return self.clash
+
+    def _compare_colors(self, colors):
+        """
+        Make a color map to the pixels comparing to the previous data
+        """
+        raise NotImplementedError
+
+
+class HiresChar(Char):
+    """
+    Hires char implementation
+    """
+
+    def get_binary_data(self):
+        """
+        Return binary data for the char
+        """
+        result = {"bitmap": [], "screen_ram": [], "color_ram": []}
+
+        for row in zip(*[iter(sorted(self.pixels))] * 8):
+            char_line = 0
+            for idx, pixel in enumerate(row):
+                bit_ = self.colors[self.pixels[pixel]]
+                char_line += bit_ * 2 ** (7 - idx)
+            result['bitmap'].append(char_line)
+
+        return result
+
+    def _compare_colors(self, colors):
+        """TODO!"""
+        return
+
+
+class MultiChar(Char):
+    """Char implementation for multicolor mode."""
+
+    def __init__(self, background, prev=None):
+        """
+        Init. prev is the Char object which represents the same character
+        in previous picture
+        """
+        super(MultiChar, self).__init__(background, prev)
+        self.max_colors = 4
+        self.pairs = {(0, 1): False,
+                      (1, 0): False,
+                      (1, 1): False}
+
+    def get_binary_data(self):
+        """
+        Return binary data for the char
+        """
+        result = {"bitmap": [], "screen-ram": 0, "color-ram": 0}
+
+        for row in zip(*[iter(sorted(self.pixels))] * 4):
+            char_line = 0
+            for idx, pixel in enumerate(row):
+                bits = self.colors.get(self.pixels[pixel], (0, 0))
+                char_line += bits[0] * 2 ** (7 - idx * 2)
+                char_line += bits[1] * 2 ** (6 - idx * 2)
+            result["bitmap"].append(char_line)
+
+        colors = dict([(y, x) for x, y in self.colors.items()])
+        col1 = colors.get((0, 1), colors.get((0, 0))) * 16
+        col2 = colors.get((1, 0), colors.get((0, 0)))
+
+        result["screen-ram"] = col1 + col2
+        result["color-ram"] = colors.get((1, 1), colors.get((0, 0)))
+
+        return result
+
+    def _compare_colors_with_prev_char(self, colors, repeat=False):
+        """
+        Make a color map to the pixels comparing to the previous data
+        """
+        needs_repeat = False
+        for color in colors:
+            if color == self.background:
+                continue
+            if repeat:
+                if color in self.colors:
+                    continue
+
+                for pair, taken in self.pairs.items():
+                    if not taken:
+                        self.pairs[pair] = True
+                        self.colors[color] = pair
+                        break
+            elif self.prev and self.prev.colors.get(color, None) is not None:
+                self.colors[color] = self.prev.colors[color]
+                self.pairs[self.prev.colors[color]] = True
+            else:
+                needs_repeat = True
+
+        return needs_repeat
+
+    def _compare_colors(self, colors):
+        """
+        Make a color map to the pixels
+        """
+        if self._compare_colors_with_prev_char(colors):
+            self._compare_colors_with_prev_char(colors, True)
+
+
 class FullScreenImage(object):
     """
     Class represents full-screen image in unspecified C64 format
@@ -139,19 +267,21 @@ class FullScreenImage(object):
         color clashes, it will do nothing, save picture with "_error" suffix
         or show it respectively.
         """
-        self._fname = fname
         self._errors_action = errors_action
-        self._error_image = None
-        self._src_image = None
-        self.log = Logger(self.LOGGER_NAME)()
-        self._data = {}
+        self._fname = fname
+        self._palette_map = None
         self._save_map = {}
+        self._src_image = None
+        self.chars = {}
+        self.data = {}
+        self.log = Logger(self.LOGGER_NAME)()
+        self.prev_chars = {}
 
     def save(self, filename, format_=None):
         """
         Save picture in one of the formats or as an executable prg.
         """
-        if not self._data.get('bitmap'):
+        if not self.data.get('bitmap'):
             if not self._convert():
                 return False
 
@@ -165,14 +295,14 @@ class FullScreenImage(object):
         Set custom color for background (as index)
         """
         self.log.info("Setting background color to: %d", color)
-        self._data['background'] = color
+        self.data['background'] = color
 
     def set_border_color(self, color):
         """
         Set custom color for border (as index)
         """
         self.log.info("Setting border color to: %d", color)
-        self._data['border'] = color
+        self.data['border'] = color
 
     def _load(self):
         """
@@ -201,11 +331,11 @@ class FullScreenImage(object):
 
         return False
 
-    def _find_most_freq_color(self, histogram, palette_map):
+    def _find_most_freq_color(self, histogram):
         """
         Check for the most frequent color on the picture. Can be used to
         auto detect background/border colors.
-        Value remembered in attribute _data['most_freq_color'] is an
+        Value remembered in attribute data['most_freq_color'] is an
         index in the C64 palette (NOT the source image palette!).
         """
         pal = self._src_image.getpalette()
@@ -217,7 +347,7 @@ class FullScreenImage(object):
             if count > highest[1]:
                 highest = (index, count)
 
-        self._data['most_freq_color'] = palette_map[pal[highest[0]]]
+        self.data['most_freq_color'] = self._palette_map[pal[highest[0]]]
 
     def _colors_check(self, histogram):
         """
@@ -245,9 +375,9 @@ class FullScreenImage(object):
 
         hist = self._src_image.histogram()
         self._colors_check(hist)
-        palette_map = self._get_best_palette_map()
-        self._find_most_freq_color(hist, palette_map)
-        return self._fill_memory(pal_map=palette_map)
+        self._find_best_palette_map()
+        self._find_most_freq_color(hist)
+        return self._fill_memory()
 
     def _get_palette(self):
         """
@@ -256,7 +386,7 @@ class FullScreenImage(object):
         pal = self._src_image.getpalette()
         return [(pal[i], pal[i + 1], pal[i + 2]) for i in range(0, 16 * 3, 3)]
 
-    def _fill_memory(self, pal_map=None):
+    def _fill_memory(self):
         """
         Create bitmap/screen-ram/color-ram colors if needed. Should be
         implemented in concrete implementation.
@@ -270,7 +400,7 @@ class FullScreenImage(object):
         """
         raise NotImplementedError()
 
-    def _get_best_palette_map(self):
+    def _find_best_palette_map(self):
         """
         Try to match source image palette to predefined ones, and return name
         of the best matched palette and color map for current source image.
@@ -298,15 +428,15 @@ class FullScreenImage(object):
             self.log.info("Quality: %d for %s-palette ", nearest_match,
                           selected_palette)
 
-        return palettes_map[selected_palette]
+        self._palette_map = palettes_map[selected_palette]
 
     def _get_border(self):
         """
         Return border color index
         """
-        border = self._data.get('border')
+        border = self.data.get('border')
         if border is None:
-            border = self._data.get('most_freq_color', 0)
+            border = self.data.get('most_freq_color', 0)
 
         return border
 
@@ -314,9 +444,9 @@ class FullScreenImage(object):
         """
         Return background color index
         """
-        background = self._data.get("background")
+        background = self.data.get("background")
         if background is None:
-            background = self._data.get("most_freq_color", 0)
+            background = self.data.get("most_freq_color", 0)
 
         return background
 
@@ -417,60 +547,49 @@ class MultiConverter(FullScreenImage):
 
         return "".join(displayer)
 
-    def _fill_memory(self, pal_map=None):
+    def _process_char(self, box, prev_char=None):
+        """
+        Analyze provided character and return the Char object.
+        """
+        char = MultiChar(self.data["background"], prev_char)
+
+        for chry, chrx in sorted([(y, x) for x in range(4) for y in range(8)]):
+            char.pixels[(chry, chrx)] = self._palette_map[box.getpixel((chrx,
+                                                                        chry))]
+        char.analyze_color_map()
+        return char
+
+
+    def _fill_memory(self):
         """
         Create bitmap, screen-ram, color-ram and error map as a picture if
         needed.
         """
-        self._data["bitmap"] = []
-        self._data["screen-ram"] = []
-        self._data["color-ram"] = []
-        self._data["background"] = self._get_background()
-        pairs = ((0, 1), (1, 0), (1, 1))
+        self.data["bitmap"] = []
+        self.data["screen-ram"] = []
+        self.data["color-ram"] = []
+        self.data["background"] = self._get_background()
+        self.data["chars"] = []
 
         error_list = []
 
+        # get every char (4x8 pixels) starting from upper left corner
         for chry, chrx in [(chry, chrx)
                            for chry in range(0, self._src_image.size[1], 8)
                            for chrx in range(0, self._src_image.size[0], 4)]:
 
             box = self._src_image.crop((chrx, chry,
                                         chrx + 4, chry + 8)).convert("RGB")
-            char_colors = []
 
-            for y__ in range(8):
-                line = 0
-                clash = False
-                for x__ in range(4):
-                    bits = None
-                    actual_color = pal_map[box.getpixel((x__, y__))]
-                    if actual_color == self._data["background"]:
-                        bits = (0, 0)
-                    elif actual_color not in [idx[0] for idx in char_colors]:
-                        if len(char_colors) == 3:
-                            clash = True
-                            bits = (0, 0)
-                        else:
-                            char_colors.append((actual_color,
-                                                pairs[len(char_colors)]))
+            char = self._process_char(box, self.prev_chars.get((chry, chrx)))
+            self.chars[(chry, chrx)] = char
 
-                    if not bits:
-                        bits = [idx[1] for idx in char_colors if
-                                idx[0] == actual_color][0]
+            char_data = char.get_binary_data()
+            self.data['bitmap'].extend(char_data['bitmap'])
+            self.data['screen-ram'].append(char_data['screen-ram'])
+            self.data['color-ram'].append(char_data['color-ram'])
 
-                    line += bits[0] * 2 ** (7 - x__ * 2)
-                    line += bits[1] * 2 ** (7 - (x__ * 2 + 1))
-
-                self._data["bitmap"].append(line)
-
-            while len(char_colors) < 3:
-                char_colors.append((self._data["background"], (0, 0)))
-
-            self._data["screen-ram"].append(char_colors[0][0] * 16 +
-                                            char_colors[1][0])
-            self._data["color-ram"].append(char_colors[2][0])
-
-            if clash:
+            if char.clash:
                 error_list.append((chrx, chry))
                 self.log.error("Too many colors per block in char %d, %d near"
                                " x=%d, y=%d.", chrx, chry, chrx * 8 + 4,
@@ -490,11 +609,11 @@ class MultiConverter(FullScreenImage):
         file_obj = open(filename, "wb")
         file_obj.write(self._get_displayer())
         file_obj.write(951 * chr(0))
-        file_obj.write("".join([chr(col) for col in self._data["screen-ram"]]))
+        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
         file_obj.write(3096 * chr(0))
-        file_obj.write("".join([chr(col) for col in self._data["color-ram"]]))
+        file_obj.write("".join([chr(col) for col in self.data["color-ram"]]))
         file_obj.write(24 * chr(0))
-        file_obj.write("".join([chr(byte) for byte in self._data["bitmap"]]))
+        file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
         file_obj.close()
         self.log.info("Saved executable under `%s' file", filename)
         return True
@@ -506,16 +625,16 @@ class MultiConverter(FullScreenImage):
         file_obj = open(filename, "wb")
         file_obj.write("%c%c" % (0x00, 0x60))
 
-        for char in self._data['bitmap']:
+        for char in self.data['bitmap']:
             file_obj.write("%c" % char)
 
-        for char in self._data["screen-ram"]:
+        for char in self.data["screen-ram"]:
             file_obj.write("%c" % char)
 
-        for char in self._data["color-ram"]:
+        for char in self.data["color-ram"]:
             file_obj.write("%c" % char)
 
-        file_obj.write(chr(self._data["background"]))
+        file_obj.write(chr(self.data["background"]))
 
         border = self._get_border()
         file_obj.write("%c" % border)
@@ -529,19 +648,19 @@ class MultiConverter(FullScreenImage):
         """
 
         with open(filename + "_bitmap.raw", "w") as file_obj:
-            for char in self._data['bitmap']:
+            for char in self.data['bitmap']:
                 file_obj.write("%c" % char)
 
         with open(filename + "_screen.raw", "w") as file_obj:
-            for char in self._data["screen-ram"]:
+            for char in self.data["screen-ram"]:
                 file_obj.write("%c" % char)
 
         with open(filename + "_color-ram.raw", "w") as file_obj:
-            for char in self._data["color-ram"]:
+            for char in self.data["color-ram"]:
                 file_obj.write("%c" % char)
 
         with open(filename + "_bg.raw", "w") as file_obj:
-            file_obj.write(chr(self._data["background"]))
+            file_obj.write(chr(self.data["background"]))
 
         self.log.info("Saved in raw format under `%s_*' files", filename)
         return True
@@ -576,12 +695,24 @@ class HiresConverter(FullScreenImage):
                      "\x18\xd0\x4c\x25\x08"]
         return "".join(displayer)
 
-    def _fill_memory(self, pal_map=None):
+    def _process_char(self, box, prev_char=None):
+        """
+        Analyze provided character and return the Char object.
+        """
+        char = HiresChar(self.data["background"], prev_char)
+
+        for chry, chrx in sorted([(y, x) for x in range(8) for y in range(8)]):
+            char.pixels[(chry, chrx)] = self._palette_map[box.getpixel((chrx,
+                                                                        chry))]
+        char.analyze_color_map()
+        return char
+
+    def _fill_memory(self):
         """
         Create bitmap/screen and error map as a picture if needed.
         """
-        self._data["bitmap"] = []
-        self._data["screen-ram"] = []
+        self.data["bitmap"] = []
+        self.data["screen-ram"] = []
 
         error_list = []
 
@@ -598,7 +729,7 @@ class HiresConverter(FullScreenImage):
             for y__ in range(8):
                 line = 0
                 for x__ in range(8):
-                    colnow = pal_map[box.getpixel((x__, y__))]
+                    colnow = self._palette_map[box.getpixel((x__, y__))]
 
                     if colnow not in char_col:
                         char_col.append(colnow)
@@ -606,12 +737,12 @@ class HiresConverter(FullScreenImage):
                     colptr = char_col.index(colnow)
                     line += colptr * 2 ** (7 - x__)
 
-                self._data["bitmap"].append(line)
+                self.data["bitmap"].append(line)
 
             if len(char_col) == 1:
                 char_col.append(char_col[0])
 
-            self._data["screen-ram"].append(char_col[1] * 16 + char_col[0])
+            self.data["screen-ram"].append(char_col[1] * 16 + char_col[0])
             if len(char_col) > 2:
                 clash = 1
                 error_list.append((chrx, chry))
@@ -633,9 +764,9 @@ class HiresConverter(FullScreenImage):
         file_obj = open(filename, "wb")
         file_obj.write(self._get_displayer())
         file_obj.write(984 * chr(0))
-        file_obj.write("".join([chr(col) for col in self._data["screen-ram"]]))
+        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
         file_obj.write(4120 * chr(0))
-        file_obj.write("".join([chr(byte) for byte in self._data["bitmap"]]))
+        file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
         file_obj.close()
         self.log.info("Saved executable under `%s' file", filename)
         return True
@@ -647,10 +778,10 @@ class HiresConverter(FullScreenImage):
         file_obj = open(filename, "wb")
         file_obj.write("%c%c" % (0x00, 0x20))
 
-        for char in self._data['bitmap']:
+        for char in self.data['bitmap']:
             file_obj.write("%c" % char)
 
-        for char in self._data["screen-ram"]:
+        for char in self.data["screen-ram"]:
             file_obj.write("%c" % char)
 
         border = self._get_border()
@@ -667,11 +798,11 @@ class HiresConverter(FullScreenImage):
         """
         with open(filename + "_screen.raw", "wb") as file_obj:
             file_obj.write("".join([chr(col)
-                                    for col in self._data["screen-ram"]]))
+                                    for col in self.data["screen-ram"]]))
 
         with open(filename + "_bitmap.raw", "wb") as file_obj:
             file_obj.write("".join([chr(byte)
-                                    for byte in self._data["bitmap"]]))
+                                    for byte in self.data["bitmap"]]))
 
         self.log.info("Saved raw data under `%s_*' files", filename)
         return True
@@ -702,32 +833,32 @@ def get_modified_fname(fname, ext, suffix='.'):
     return "".join([path, suffix, ext])
 
 
-def multiconv(arguments):
+def convert(arguments, converter_class):
     """
-    Convert to multicolor picture
+    Convert pictures
     """
-    mutli_conv = MultiConverter(arguments.filename, arguments.errors)
-    if arguments.border is not None:
-        mutli_conv.set_border_color(arguments.border)
-    if arguments.background is not None:
-        mutli_conv.set_bg_color(arguments.background)
-    mutli_conv.log.set_verbose(arguments.verbose, arguments.quiet)
+    last = conv = None
+    for fname in arguments.filename:
+        if conv:
+            last = conv
 
-    filename, format_ = resolve_name(arguments)
-    mutli_conv.save(filename, format_)
+        conv = converter_class(fname, arguments.errors)
 
+        if last:
+            conv.prev_chars = last.chars
 
-def hiresconv(arguments):
-    """
-    Convert to hires picture
-    """
-    hires_conv = HiresConverter(arguments.filename, arguments.errors)
-    if arguments.border is not None:
-        hires_conv.set_border_color(arguments.border)
-    hires_conv.log.set_verbose(arguments.verbose, arguments.quiet)
+        if arguments.border is not None:
+            conv.set_border_color(arguments.border)
 
-    filename, format_ = resolve_name(arguments)
-    hires_conv.save(filename, format_)
+        # note, that for hires pictures it doesn't make sense, and will be
+        # ignored.
+        if arguments.background is not None:
+            conv.set_bg_color(arguments.background)
+
+        conv.log.set_verbose(arguments.verbose, arguments.quiet)
+
+        filename, format_ = resolve_name(arguments, fname)
+        conv.save(filename, format_)
 
 
 def best_color_match(orig_color, colors):
@@ -756,14 +887,22 @@ def best_color_match(orig_color, colors):
     return color2use, delta
 
 
-def resolve_name(arguments):
+def resolve_name(arguments, fname):
     """
     Return right name and format for an output file.
     """
     if arguments.output:
-        filename = arguments.output
+        if len(arguments.filename) > 1:
+            if not os.path.exists(arguments.output):
+                os.mkdir(arguments.output)
+            if not os.path.isdir(arguments.output):
+                raise IOError("Path `%s' is not directory" % arguments.output)
+            filename = os.path.join(arguments.output,
+                                    get_modified_fname(fname, "prg"))
+        else:
+            filename = arguments.output
     else:
-        filename = get_modified_fname(arguments.filename, "prg")
+        filename = get_modified_fname(fname, "prg")
 
     format_ = arguments.format
 
@@ -780,6 +919,20 @@ def resolve_name(arguments):
         filename, ext = os.path.splitext(filename)
 
     return filename, format_
+
+
+def multiconv(arguments):
+    """
+    Convert to multicolor picture
+    """
+    convert(arguments, MultiConverter)
+
+
+def hiresconv(arguments):
+    """
+    Convert to hires picture
+    """
+    convert(arguments, HiresConverter)
 
 
 if __name__ == "__main__":
@@ -810,8 +963,10 @@ if __name__ == "__main__":
                        "data. Useful for include in assemblers",
                        action="store_true")
     PARSER.add_argument("-o", "--output", help="output filename, default: "
-                        "same filename as original with appropriate extension")
-    PARSER.add_argument('filename')
+                        "same filename as original with appropriate extension"
+                        ". If multiple files provided as the input, output "
+                        "will be treated as the directory")
+    PARSER.add_argument('filename', nargs="+")
 
     GROUP = PARSER.add_mutually_exclusive_group()
     GROUP.add_argument("-q", "--quiet", help='please, be quiet. Adding more '
