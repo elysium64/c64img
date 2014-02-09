@@ -107,25 +107,22 @@ class Char(object):
     Char implementation
     """
 
-    def __init__(self, background, prev=None):
+    def __init__(self, prev=None):
         """
         Init. prev is the Char object which represents the same character in
         previous picture
         """
-        self.background = background
         self.clash = False
         self.colors = {}
         self.max_colors = 2
         self.pixels = {}
         self.prev = prev
 
-    def analyze_color_map(self):
+    def _analyze_color_map(self):
         """
         Check for the optimal color placement in char. This method may be run
-        only on not clashed chars. Background color should be always
-        available.
+        only on not clashed chars.
         """
-        self.colors[self.background] = (0, 0)
 
         if self._check_clash():
             return
@@ -133,7 +130,7 @@ class Char(object):
         if self.prev and self.prev.clash:
             return
 
-        colors = Counter([x for x in self.pixels.values()])
+        colors = Counter(self.pixels.values())
         self._compare_colors(colors)
 
     def get_binary_data(self):
@@ -141,6 +138,17 @@ class Char(object):
         Return binary data for the char
         """
         raise NotImplementedError
+
+    def process(self, box, palette_map):
+        """
+        Store pixel/color information
+        """
+        for chry, chrx in sorted([(y, x)
+                                  for x in range(box.size[0])
+                                  for y in range(box.size[1])]):
+            self.pixels[(chry, chrx)] = palette_map[box.getpixel((chrx, chry))]
+
+        self._analyze_color_map()
 
     def _check_clash(self):
         """
@@ -150,11 +158,18 @@ class Char(object):
             self.clash = True
         return self.clash
 
-    def _compare_colors(self, colors):
+    def _compare_colors_with_prev_char(self, colors, repeat=False):
         """
         Make a color map to the pixels comparing to the previous data
         """
         raise NotImplementedError
+
+    def _compare_colors(self, colors):
+        """
+        Make a color map to the pixels
+        """
+        if self._compare_colors_with_prev_char(colors):
+            self._compare_colors_with_prev_char(colors, True)
 
 
 class HiresChar(Char):
@@ -162,24 +177,60 @@ class HiresChar(Char):
     Hires char implementation
     """
 
+    def __init__(self, mfc, prev=None):
+        """
+        Init. prev is the Char object which represents the same character
+        in previous picture. Mfc stands for most frequent color, which will be
+        preferred as a background for a character, if exists in char colors.
+        """
+        super(HiresChar, self).__init__(prev)
+        self._mfc = mfc
+        self.pixel_state = {0: False, 1: False}
+
     def get_binary_data(self):
         """
         Return binary data for the char
         """
-        result = {"bitmap": [], "screen_ram": [], "color_ram": []}
+        result = {"bitmap": [], "screen_ram": 0}
 
         for row in zip(*[iter(sorted(self.pixels))] * 8):
             char_line = 0
             for idx, pixel in enumerate(row):
-                bit_ = self.colors[self.pixels[pixel]]
+                bit_ = self.colors.get(self.pixels[pixel], self._mfc)
                 char_line += bit_ * 2 ** (7 - idx)
             result['bitmap'].append(char_line)
 
+        colors = dict([(y, x) for x, y in self.colors.items()])
+        result['screen-ram'] = colors.get(0, self._mfc)
+        if 1 in colors:
+            result['screen-ram'] += colors[1] * 16
         return result
 
-    def _compare_colors(self, colors):
-        """TODO!"""
-        return
+    def _compare_colors_with_prev_char(self, colors, repeat=False):
+        """
+        Make a color map to the pixels comparing to the previous data
+        """
+        needs_repeat = False
+        if repeat:
+            if self._mfc in colors and not self.pixel_state[0] \
+                    and not self.pixel_state[1]:
+                self.pixel_state[0] = True
+                self.colors[self._mfc] = 0
+
+        for color in colors:
+            if repeat:
+                for value, taken in self.pixel_state.items():
+                    if not taken and color not in self.colors.values():
+                        self.pixel_state[value] = True
+                        self.colors[color] = value
+                        break
+            elif self.prev and self.prev.colors.get(color, None) is not None:
+                self.colors[color] = self.prev.colors[color]
+                self.pixel_state[self.prev.colors[color]] = True
+            else:
+                needs_repeat = True
+
+        return needs_repeat
 
 
 class MultiChar(Char):
@@ -190,11 +241,21 @@ class MultiChar(Char):
         Init. prev is the Char object which represents the same character
         in previous picture
         """
-        super(MultiChar, self).__init__(background, prev)
+        super(MultiChar, self).__init__(prev)
+        self.background = background
         self.max_colors = 4
         self.pairs = {(0, 1): False,
                       (1, 0): False,
                       (1, 1): False}
+
+    def _analyze_color_map(self):
+        """
+        Check for the optimal color placement in char. This method may be run
+        only on not clashed chars. Background color should be always
+        available.
+        """
+        self.colors[self.background] = (0, 0)
+        super(MultiChar, self)._analyze_color_map()
 
     def get_binary_data(self):
         """
@@ -243,13 +304,6 @@ class MultiChar(Char):
                 needs_repeat = True
 
         return needs_repeat
-
-    def _compare_colors(self, colors):
-        """
-        Make a color map to the pixels
-        """
-        if self._compare_colors_with_prev_char(colors):
-            self._compare_colors_with_prev_char(colors, True)
 
 
 class FullScreenImage(object):
@@ -390,13 +444,6 @@ class FullScreenImage(object):
         """
         Create bitmap/screen-ram/color-ram colors if needed. Should be
         implemented in concrete implementation.
-        """
-        raise NotImplementedError()
-
-    def _get_displayer(self):
-        """
-        Return displayer code. Here it is only a stub. Should be implemented
-        for concrete implementations.
         """
         raise NotImplementedError()
 
@@ -547,19 +594,6 @@ class MultiConverter(FullScreenImage):
 
         return "".join(displayer)
 
-    def _process_char(self, box, prev_char=None):
-        """
-        Analyze provided character and return the Char object.
-        """
-        char = MultiChar(self.data["background"], prev_char)
-
-        for chry, chrx in sorted([(y, x) for x in range(4) for y in range(8)]):
-            char.pixels[(chry, chrx)] = self._palette_map[box.getpixel((chrx,
-                                                                        chry))]
-        char.analyze_color_map()
-        return char
-
-
     def _fill_memory(self):
         """
         Create bitmap, screen-ram, color-ram and error map as a picture if
@@ -581,7 +615,9 @@ class MultiConverter(FullScreenImage):
             box = self._src_image.crop((chrx, chry,
                                         chrx + 4, chry + 8)).convert("RGB")
 
-            char = self._process_char(box, self.prev_chars.get((chry, chrx)))
+            char = MultiChar(self.data["background"],
+                             self.prev_chars.get((chry, chrx)))
+            char.process(box, self._palette_map)
             self.chars[(chry, chrx)] = char
 
             char_data = char.get_binary_data()
@@ -695,28 +731,13 @@ class HiresConverter(FullScreenImage):
                      "\x18\xd0\x4c\x25\x08"]
         return "".join(displayer)
 
-    def _process_char(self, box, prev_char=None):
-        """
-        Analyze provided character and return the Char object.
-        """
-        char = HiresChar(self.data["background"], prev_char)
-
-        for chry, chrx in sorted([(y, x) for x in range(8) for y in range(8)]):
-            char.pixels[(chry, chrx)] = self._palette_map[box.getpixel((chrx,
-                                                                        chry))]
-        char.analyze_color_map()
-        return char
-
     def _fill_memory(self):
         """
         Create bitmap/screen and error map as a picture if needed.
         """
         self.data["bitmap"] = []
         self.data["screen-ram"] = []
-
         error_list = []
-
-        clash = 0
 
         for chry, chrx in [(chry, chrx)
                            for chry in range(0, self._src_image.size[1], 8)
@@ -724,33 +745,23 @@ class HiresConverter(FullScreenImage):
 
             box = self._src_image.crop((chrx, chry,
                                         chrx + 8, chry + 8)).convert("RGB")
-            char_col = []
 
-            for y__ in range(8):
-                line = 0
-                for x__ in range(8):
-                    colnow = self._palette_map[box.getpixel((x__, y__))]
+            char = HiresChar(self.data['most_freq_color'],
+                             self.prev_chars.get((chry, chrx)))
+            char.process(box, self._palette_map)
+            self.chars[(chry, chrx)] = char
 
-                    if colnow not in char_col:
-                        char_col.append(colnow)
+            char_data = char.get_binary_data()
+            self.data['bitmap'].extend(char_data['bitmap'])
+            self.data['screen-ram'].append(char_data['screen-ram'])
 
-                    colptr = char_col.index(colnow)
-                    line += colptr * 2 ** (7 - x__)
-
-                self.data["bitmap"].append(line)
-
-            if len(char_col) == 1:
-                char_col.append(char_col[0])
-
-            self.data["screen-ram"].append(char_col[1] * 16 + char_col[0])
-            if len(char_col) > 2:
-                clash = 1
+            if char.clash:
                 error_list.append((chrx, chry))
                 self.log.error("Too many colors per block in char %d, %d near"
                                " x=%d, y=%d.", chrx, chry,
                                chrx * 8 + 4, chry * 8 + 4)
 
-        if clash:
+        if error_list:
             self._error_image_action(error_list)
             return False
 
