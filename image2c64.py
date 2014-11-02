@@ -13,6 +13,13 @@ from collections import Counter
 from PIL import Image
 from PIL.ImageDraw import Draw
 
+# Hack to make Windows behavie.
+try:
+    import msvcrt
+    msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+except ImportError:
+    pass
+
 
 # Palettes are organized with original C64 order:
 # black, white, red, magenta, purple, green, dark blue, yellow,
@@ -683,19 +690,19 @@ class MultiConverter(FullScreenImage):
         Save as raw data
         """
 
-        with open(filename + "_bitmap.raw", "w") as file_obj:
+        with open(filename + "_bitmap.raw", "wb") as file_obj:
             for char in self.data['bitmap']:
                 file_obj.write("%c" % char)
 
-        with open(filename + "_screen.raw", "w") as file_obj:
+        with open(filename + "_screen.raw", "wb") as file_obj:
             for char in self.data["screen-ram"]:
                 file_obj.write("%c" % char)
 
-        with open(filename + "_color-ram.raw", "w") as file_obj:
+        with open(filename + "_color-ram.raw", "wb") as file_obj:
             for char in self.data["color-ram"]:
                 file_obj.write("%c" % char)
 
-        with open(filename + "_bg.raw", "w") as file_obj:
+        with open(filename + "_bg.raw", "wb") as file_obj:
             file_obj.write(chr(self.data["background"]))
 
         self.log.info("Saved in raw format under `%s_*' files", filename)
