@@ -54,6 +54,7 @@ Examples:
 Changes
 -------
 
++ 2014-11-11 Fixed issue with color clash check in multicolor
 + 2014-11-11 Added ``grafx2`` option into error param. In such case image will
   be opened in `grafx2`_ program alongside with the error pic on spare screen.
 + 2014-02-09 Rewrite the core of the converter (introduced *char* abstraction),

@@ -492,6 +492,18 @@ class TestFullScreenImage(TestCase):
     """
     Test FullScreenImage class
     """
+    def setUp(self):
+        """setup"""
+        self._system = os.system
+        self.os_system_params = ""
+        def _system(param):
+            self.os_system_params = param
+        os.system = _system
+
+    def tearDown(self):
+        """Restore stuff"""
+        os.system = self._system
+
     def test___init(self):
         """
         Test initialization
@@ -846,6 +858,17 @@ class TestFullScreenImage(TestCase):
         obj._load()
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
+
+        # Test the grafx2 option
+        error_img = os.path.join(os.path.dirname(__file__),
+                                 image2c64.get_modified_fname(MULTI_320, 'png',
+                                                              '_error.'))
+        obj = image2c64.MultiConverter(MULTI_320)
+        obj._load()
+        obj._errors_action = "grafx2"
+        obj._error_image_action([(0, 0)])
+        self.assertTrue("grafx2" in self.os_system_params)
+        os.unlink(error_img)
 
 
 class TestHires(TestCase):

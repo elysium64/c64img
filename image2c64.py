@@ -255,6 +255,22 @@ class MultiChar(Char):
                       (1, 0): False,
                       (1, 1): False}
 
+    def _check_clash(self):
+        """
+        Check color clash. max_colors is the maximum colors per char object
+        """
+        super(MultiChar, self)._check_clash()
+        if self.clash:
+            return self.clash
+
+        colors_list = list(set([x for x in self.pixels.values()]))
+        if self.background in colors_list:
+            return self.clash
+        elif len(colors_list) == self.max_colors:
+            self.clash = True
+
+        return self.clash
+
     def _analyze_color_map(self):
         """
         Check for the optimal color placement in char. This method may be run
@@ -538,7 +554,6 @@ class FullScreenImage(object):
             image.save(file_obj, "png")
             file_obj.close()
             if self._errors_action == 'grafx2':
-
                 os.system("grafx2 %s %s" %
                           (self._fname, get_modified_fname(self._fname, 'png',
                                                            '_error.')))
@@ -960,46 +975,52 @@ def hiresconv(arguments):
     convert(arguments, HiresConverter)
 
 
-if __name__ == "__main__":
-
-    F_MAP = {"art-studio-hires": hiresconv,
+def main():
+    """
+    Parse options, run the conversion
+    """
+    f_map = {"art-studio-hires": hiresconv,
              "hires": hiresconv,
              "koala": multiconv,
              "multi": multiconv}
 
-    PARSER = ArgumentParser(description=__doc__,
+    parser = ArgumentParser(description=__doc__,
                             formatter_class=RawDescriptionHelpFormatter)
-    PARSER.add_argument("-b", "--border", help="set color number for border, "
+    parser.add_argument("-b", "--border", help="set color number for border, "
                         "default: most frequent color", type=int,
                         choices=range(16))
-    PARSER.add_argument("-g", "--background", help="set color number for "
+    parser.add_argument("-g", "--background", help="set color number for "
                         "background", type=int, choices=range(16))
-    PARSER.add_argument("-e", "--errors", help="save errormap under the "
+    parser.add_argument("-e", "--errors", help="save errormap under the "
                         "same name with '_error' suffix, show it, open in "
                         "grafx2, or don't do anything (conversion stops "
                         "anyway)", default="none",
                         choices=("show", "save", "grafx2", "none"))
-    PARSER.add_argument("-f", "--format", help="format of output file, this "
-                        "option is mandatory", choices=F_MAP.keys(),
+    parser.add_argument("-f", "--format", help="format of output file, this "
+                        "option is mandatory", choices=f_map.keys(),
                         required=True)
-    GROUP = PARSER.add_mutually_exclusive_group()
-    GROUP.add_argument("-x", "--executable", help="produce C64 executable as"
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-x", "--executable", help="produce C64 executable as"
                        " 'prg' file", action="store_true")
-    GROUP.add_argument("-r", "--raw", help="produce raw files with only the "
+    group.add_argument("-r", "--raw", help="produce raw files with only the "
                        "data. Useful for include in assemblers",
                        action="store_true")
-    PARSER.add_argument("-o", "--output", help="output filename, default: "
+    parser.add_argument("-o", "--output", help="output filename, default: "
                         "same filename as original with appropriate extension"
                         ". If multiple files provided as the input, output "
                         "will be treated as the directory")
-    PARSER.add_argument('filename', nargs="+")
+    parser.add_argument('filename', nargs="+")
 
-    GROUP = PARSER.add_mutually_exclusive_group()
-    GROUP.add_argument("-q", "--quiet", help='please, be quiet. Adding more '
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-q", "--quiet", help='please, be quiet. Adding more '
                        '"q" will decrease verbosity', action="count",
                        default=0)
-    GROUP.add_argument("-v", "--verbose", help='be verbose. Adding more "v" '
+    group.add_argument("-v", "--verbose", help='be verbose. Adding more "v" '
                        'will increase verbosity', action="count", default=0)
 
-    ARGS = PARSER.parse_args()
-    F_MAP[ARGS.format](ARGS)
+    arguments = parser.parse_args()
+    f_map[arguments.format](arguments)
+
+
+if __name__ == "__main__":
+    main()
