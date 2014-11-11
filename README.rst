@@ -54,6 +54,8 @@ Examples:
 Changes
 -------
 
++ 2014-11-11 Added ``grafx2`` option into error param. In such case image will
+  be opened in `grafx2`_ program alongside with the error pic on spare screen.
 + 2014-02-09 Rewrite the core of the converter (introduced *char* abstraction),
   added ability to convert sequence of images.
 + 2012-11-20 Added executable output format for multicolor
@@ -70,3 +72,4 @@ Other info
 
 .. _PNG2HIRES_ v0.2 gfx format converter: http://www.atlantis-prophecy.org/onslaught/legal.html
 .. _pillow: https://github.com/python-imaging/Pillow
+.. _grafx2: http://pulkomandy.tk/projects/GrafX2

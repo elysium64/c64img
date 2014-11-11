@@ -511,30 +511,37 @@ class FullScreenImage(object):
         it is always have dimensions 320x200.
         """
         char_x_size = 1
+        x_offset = 3
         if self._errors_action == "none":
             return
 
         image = self._src_image.copy().convert("RGBA")
-        if scaled:
+        if scaled and self._errors_action != "grafx2":
             image = image.resize((320, 200))
             char_x_size = 2
+            x_offset = 7
 
         image_map = image.copy()
         drawable = Draw(image_map)
 
         for chrx, chry in error_list:
             drawable.rectangle((chrx * char_x_size, chry,
-                                chrx * char_x_size + 7, chry + 7),
+                                chrx * char_x_size + x_offset, chry + 7),
                                outline="red")
 
         image = Image.blend(image, image_map, 0.65)
         del drawable
 
-        if self._errors_action == 'save':
+        if self._errors_action in ('save', 'grafx2'):
             file_obj = open(get_modified_fname(self._fname, 'png', '_error.'),
                             "wb")
             image.save(file_obj, "png")
             file_obj.close()
+            if self._errors_action == 'grafx2':
+
+                os.system("grafx2 %s %s" %
+                          (self._fname, get_modified_fname(self._fname, 'png',
+                                                           '_error.')))
         else:
             clashes = image.resize((640, 400))
             clashes.show()
@@ -968,9 +975,10 @@ if __name__ == "__main__":
     PARSER.add_argument("-g", "--background", help="set color number for "
                         "background", type=int, choices=range(16))
     PARSER.add_argument("-e", "--errors", help="save errormap under the "
-                        "same name with '_error' suffix, show it or don't do "
-                        "anything (conversion stops anyway)", default="none",
-                        choices=("show", "save", "none"))
+                        "same name with '_error' suffix, show it, open in "
+                        "grafx2, or don't do anything (conversion stops "
+                        "anyway)", default="none",
+                        choices=("show", "save", "grafx2", "none"))
     PARSER.add_argument("-f", "--format", help="format of output file, this "
                         "option is mandatory", choices=F_MAP.keys(),
                         required=True)
