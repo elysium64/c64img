@@ -36,6 +36,14 @@ MULTI = "test_images/multi.160x200.png"
 MULTI_320 = "test_images/multi.320x200.png"
 
 
+class LogMock(object):
+    """Mock logger class"""
+    def warning(*args, **kwargs):
+        return
+    def debug(*args, **kwargs):
+        return
+
+
 class Interceptor(object):
     """
     Interceptor class for function call detection
@@ -59,25 +67,29 @@ class TestChar(TestCase):
     """
     Test Char class
     """
+    def setUp(self):
+        """set up"""
+        self.log = LogMock()
+
     def test___init(self):
         """
         Test Char initialization
         """
-        char = image2c64.Char()
+        char = image2c64.Char(self.log)
         self.assertEqual(char.clash, False)
         self.assertEqual(char.colors, {})
         self.assertEqual(char.max_colors, 2)
         self.assertEqual(char.pixels, {})
         self.assertEqual(char.prev, None)
 
-        char = image2c64.Char("foo")
+        char = image2c64.Char(self.log, "foo")
         self.assertEqual(char.prev, "foo")
 
     def test__analyze_color_map(self):
         """
         Test _analyze_color_map method
         """
-        char = image2c64.Char(0)
+        char = image2c64.Char(self.log, 0)
         # simulate clash
         char.max_colors = 1
         char.pixels[(0, 0)] = 1
@@ -88,51 +100,51 @@ class TestChar(TestCase):
         # simulate previous image clash
         char.clash = False
         char.max_colors = 2
-        char.prev = image2c64.Char(0)
+        char.prev = image2c64.Char(self.log, 0)
         char.prev.clash = True
         char._analyze_color_map()
         self.assertEqual(char.colors, {})
         self.assertEqual(len(char.colors), 0)
 
-        # finally, not implemented error caused by other method
-        char.prev = None
-        char.clash = False
-        self.assertRaises(NotImplementedError, char._analyze_color_map)
-
     def test_get_binary_data(self):
         """
         Test get_binary_data method
         """
-        char = image2c64.Char(0)
+        char = image2c64.Char(self.log, 0)
         self.assertRaises(NotImplementedError, char.get_binary_data)
 
     def test__check_clash(self):
         """
         Test _check_clash method
         """
-        char = image2c64.Char(0)
+        char = image2c64.Char(self.log, 0)
         self.assertEqual(char._check_clash(), False)
 
     def test__compare_colors(self):
         """
         Test _compare_colors method
         """
-        char = image2c64.Char(0)
+        char = image2c64.Char(self.log)
         self.assertRaises(TypeError, char._compare_colors)
-        self.assertRaises(NotImplementedError, char._compare_colors, None)
+        self.assertRaises(TypeError, char._compare_colors, None)
+        char._compare_colors([])
 
 
 class TestMultiChar(TestCase):
     """
     Test multicolor Char class
     """
+    def setUp(self):
+        """set up"""
+        self.log = LogMock()
+
     def test___init(self):
         """
         Test Char initialization
         """
-        char = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
         self.assertEqual(char.max_colors, 4)
-        self.assertEqual(char.pairs, {(0, 1): False,
+        self.assertEqual(char.pixel_state, {(0, 1): False,
                                       (1, 0): False,
                                       (1, 1): False})
 
@@ -140,7 +152,7 @@ class TestMultiChar(TestCase):
         """
         Test get_binary_data method
         """
-        char = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
         char.pixels = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (0, 3): 3,
                        (1, 0): 0, (1, 1): 1, (1, 2): 2, (1, 3): 3}
         char._analyze_color_map()
@@ -169,7 +181,7 @@ class TestMultiChar(TestCase):
         Test _compare_colors method
         """
         iceptor = Interceptor()
-        char = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
         char._compare_colors_with_prev_char = iceptor
         char._compare_colors(None)
         self.assertEqual(iceptor.call, 1)
@@ -182,7 +194,7 @@ class TestMultiChar(TestCase):
         """
         Test _analyze_color_map method
         """
-        char = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
         # simulate clash
         char.max_colors = 1
         char.pixels[(0, 0)] = 1
@@ -193,7 +205,7 @@ class TestMultiChar(TestCase):
         # simulate previous image clash
         char.clash = False
         char.max_colors = 2
-        char.prev = image2c64.MultiChar(0)
+        char.prev = image2c64.MultiChar(self.log, 0)
         char.prev.clash = True
         char._analyze_color_map()
         self.assertEqual(char.colors[0], (0, 0))
@@ -205,7 +217,7 @@ class TestMultiChar(TestCase):
         for creating new mapping for multicolor bit pairs in conjunction with
         corresponding colors.
         """
-        char = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
         colors = {0: 16,
                   1: 4,
                   2: 5,
@@ -214,26 +226,26 @@ class TestMultiChar(TestCase):
         # The default case. No previous picture stored, no colors to compare
         # with. None colors were stored.
         self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pairs, {(1, 0): False,
+        self.assertEqual(char.pixel_state, {(1, 0): False,
                                       (0, 1): False,
                                       (1, 1): False})
         self.assertEqual(char.colors, {})
 
         # So it needs to rerun, colors are recognized and remembered.
         self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {1: (0, 1), 2: (1, 0), 3: (1, 1)})
 
         # 1. Ideal case. Colors for previous and current character in char
         # boundary are the same. No need to rerun checks.
-        char = image2c64.MultiChar(0)
-        prev = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
+        prev = image2c64.MultiChar(self.log, 0)
         prev.colors = {1: (0, 1), 2: (1, 0), 3: (1, 1)}
         char.prev = prev
         self.assertFalse(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {1: (0, 1), 2: (1, 0), 3: (1, 1)})
@@ -241,12 +253,12 @@ class TestMultiChar(TestCase):
         # 2. Mixed colors/pixel pairs. Color indices are matching fine. Colors
         # and pairs from previous character should be propagated into current
         # char.
-        char = image2c64.MultiChar(0)
-        prev = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
+        prev = image2c64.MultiChar(self.log, 0)
         prev.colors = {3: (0, 1), 1: (1, 0), 2: (1, 1)}
         char.prev = prev
         self.assertFalse(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {3: (0, 1), 1: (1, 0), 2: (1, 1)})
@@ -254,17 +266,17 @@ class TestMultiChar(TestCase):
         # 3. Mixed colors/pixel pairs. One color index differ. Colors and
         # pairs from previous character should be propagated into current
         # char, the mismatch color should be replaced by current one.
-        char = image2c64.MultiChar(0)
-        prev = image2c64.MultiChar(0)
+        char = image2c64.MultiChar(self.log, 0)
+        prev = image2c64.MultiChar(self.log, 0)
         prev.colors = {3: (0, 1), 4: (1, 0), 2: (1, 1)}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pairs, {(1, 0): False,
+        self.assertEqual(char.pixel_state, {(1, 0): False,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {3: (0, 1), 2: (1, 1)})
         self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {3: (0, 1), 2: (1, 1), 1: (1, 0)})
@@ -272,57 +284,118 @@ class TestMultiChar(TestCase):
         # 4. Mixed colors/pixel pairs. One color index match. Colors and
         # pairs from previous character should be propagated into current
         # char, the mismatch colors should be replaced by current ones.
-        char = image2c64.MultiChar(0)
-        prev = image2c64.MultiChar(6)
+        char = image2c64.MultiChar(self.log, 0)
+        prev = image2c64.MultiChar(self.log, 6)
         prev.colors = {4: (0, 1), 3: (1, 0), 5: (1, 1)}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): False,
                                       (1, 1): False})
         self.assertEqual(char.colors, {3: (1, 0)})
         self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {3: (1, 0), 1: (0, 1), 2: (1, 1)})
 
         # 5. Worst case scenario. None of the colors from previous char
         # matches. Get the current colors.
-        char = image2c64.MultiChar(0)
-        prev = image2c64.MultiChar(6)
+        char = image2c64.MultiChar(self.log, 0)
+        prev = image2c64.MultiChar(self.log, 6)
         prev.colors = {4: (0, 1), 5: (1, 0), 6: (1, 1)}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pairs, {(1, 0): False,
+        self.assertEqual(char.pixel_state, {(1, 0): False,
                                       (0, 1): False,
                                       (1, 1): False})
         self.assertEqual(char.colors, {})
         self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pairs, {(1, 0): True,
+        self.assertEqual(char.pixel_state, {(1, 0): True,
                                       (0, 1): True,
                                       (1, 1): True})
         self.assertEqual(char.colors, {1: (0, 1), 2: (1, 0), 3: (1, 1)})
+
+    def test__fix_color_clash(self):
+        """Test for repait color clash"""
+        bg = 0  # black
+        col1 = 1  # white
+        col2 = 2  # red
+        col3 = 3  # magenta
+        clash = 4  # purple
+
+        char = image2c64.MultiChar(self.log, bg, prev=None, fix_clash=True)
+
+        char.pixels = {(0, 0): bg, (0, 1): col1, (0, 2): col2, (0, 3): col3,
+                       (1, 0): bg, (1, 1): col1, (1, 2): col2, (1, 3): col3,
+                       (2, 0): bg, (2, 1): col1, (2, 2): col2, (2, 3): col3,
+                       (3, 0): bg, (3, 1): col1, (3, 2): col2, (3, 3): col3,
+                       (4, 0): bg, (4, 1): col1, (4, 2): col2, (4, 3): col3,
+                       (5, 0): bg, (5, 1): col1, (5, 2): col2, (5, 3): col3,
+                       (6, 0): bg, (6, 1): col1, (6, 2): col2, (6, 3): col3,
+                       (7, 0): bg, (7, 1): col1, (7, 2): col2, (7, 3): clash}
+
+        char._analyze_color_map()
+        self.assertEqual(char.pixels[(7, 3)], col2)
+
+        c1 = 3  # magenta
+        c2 = 4  # purple
+        c3 = 5  # green
+        c4 = 6  # d.blue
+
+        char = image2c64.MultiChar(self.log, bg, prev=None, fix_clash=True)
+        char.pixels = {(0, 0): c1, (0, 1): c2, (0, 2): c3, (0, 3): c4,
+                       (1, 0): c1, (1, 1): c2, (1, 2): c3, (1, 3): c4,
+                       (2, 0): c1, (2, 1): c2, (2, 2): c3, (2, 3): c4,
+                       (3, 0): c1, (3, 1): c2, (3, 2): c3, (3, 3): c4,
+                       (4, 0): c1, (4, 1): c2, (4, 2): c3, (4, 3): c4,
+                       (5, 0): c1, (5, 1): c2, (5, 2): c3, (5, 3): c4,
+                       (6, 0): c1, (6, 1): c2, (6, 2): c3, (6, 3): c4,
+                       (7, 0): c1, (7, 1): c2, (7, 2): c3, (7, 3): c4}
+
+        char._analyze_color_map()
+        for idx in range(8):
+            self.assertEqual(char.pixels[(idx, 0)], c1)
+            self.assertEqual(char.pixels[(idx, 1)], c2)
+            self.assertEqual(char.pixels[(idx, 2)], c3)
+            self.assertEqual(char.pixels[(idx, 3)], bg)
+
+        c1 = 1  # white - clash
+        c2 = 2  # red
+        c3 = 5  # green
+        c4 = 3  # magenta
+
+        char = image2c64.MultiChar(self.log, bg, prev=None, fix_clash=True)
+        char.pixels = {(0, 0): c1, (0, 1): c2, (0, 2): c3, (0, 3): c4,
+                       (1, 0): c1, (1, 1): c2, (1, 2): c3, (1, 3): c4,
+                       (2, 0): c1, (2, 1): c2, (2, 2): c3, (2, 3): c4,
+                       (3, 0): bg, (3, 1): c2, (3, 2): c3, (3, 3): c4,
+                       (4, 0): bg, (4, 1): c2, (4, 2): c3, (4, 3): c4,
+                       (5, 0): bg, (5, 1): c2, (5, 2): c3, (5, 3): c4,
+                       (6, 0): bg, (6, 1): c2, (6, 2): c3, (6, 3): c4,
+                       (7, 0): bg, (7, 1): c2, (7, 2): c3, (7, 3): c4}
+
+        char._analyze_color_map()
+        for idx in range(8):
+            self.assertEqual(char.pixels[(idx, 0)], bg)
+            self.assertEqual(char.pixels[(idx, 1)], c2)
+            self.assertEqual(char.pixels[(idx, 2)], c3)
+            self.assertEqual(char.pixels[(idx, 3)], c4)
 
 
 class TestHiresChar(TestCase):
     """
     Test hires Char class
     """
-    def test___init(self):
-        """
-        Test Char initialization
-        """
-        char = image2c64.HiresChar(0)
-        self.assertEqual(char.max_colors, 2)
-        self.assertEqual(char._mfc, 0)
-        self.assertEqual(char.pixel_state, {0: False, 1: False})
+    def setUp(self):
+        """set up"""
+        self.log = LogMock()
 
     def test_get_binary_data(self):
         """
         Test get_binary_data method
         """
-        char = image2c64.HiresChar(0)
+        char = image2c64.HiresChar(self.log)
         char.pixels = {(0, 0): 1, (0, 1): 0, (0, 2): 1, (0, 3): 0,
                        (0, 4): 0, (0, 5): 1, (0, 6): 0, (0, 7): 1}
         char._analyze_color_map()
@@ -347,6 +420,8 @@ class TestHiresChar(TestCase):
                        (6, 4): 0, (6, 5): 1, (6, 6): 0, (6, 7): 1,
                        (7, 0): 1, (7, 1): 0, (7, 2): 1, (7, 3): 0,
                        (7, 4): 0, (7, 5): 1, (7, 6): 0, (7, 7): 2}
+        char._fix_clash = True
+        char._analyze_color_map()
         result = char.get_binary_data()
         self.assertEqual(result['bitmap'], [165, 165, 165, 165, 165, 165, 165,
                                             0b10100100])
@@ -358,7 +433,7 @@ class TestHiresChar(TestCase):
         for creating new mapping for multicolor bit pairs in conjunction with
         corresponding colors.
         """
-        char = image2c64.HiresChar(15)
+        char = image2c64.HiresChar(self.log)
         colors = {8: 50, 9: 14}
 
         # The default case. No previous picture stored, no colors to compare
@@ -374,8 +449,8 @@ class TestHiresChar(TestCase):
 
         # 1. Ideal case. Colors for previous and current character in char
         # boundary are the same. No need to rerun checks.
-        char = image2c64.HiresChar(15)
-        prev = image2c64.HiresChar(15)
+        char = image2c64.HiresChar(self.log)
+        prev = image2c64.HiresChar(self.log)
         prev.colors = {8: 0, 9: 1}
         char.prev = prev
         self.assertFalse(char._compare_colors_with_prev_char(colors))
@@ -385,8 +460,8 @@ class TestHiresChar(TestCase):
         # 2. Mixed colors/pixel pairs. Color indices are matching fine. Colors
         # and pairs from previous character should be propagated into current
         # char.
-        char = image2c64.HiresChar(9)
-        prev = image2c64.HiresChar(9)
+        char = image2c64.HiresChar(self.log)
+        prev = image2c64.HiresChar(self.log)
         prev.colors = {9: 1, 8: 0}
         char.prev = prev
         self.assertFalse(char._compare_colors_with_prev_char(colors))
@@ -396,8 +471,8 @@ class TestHiresChar(TestCase):
         # 3. Mixed colors/pixel pairs. One color index differ. Tho other color
         # from previous character should be propagated into current char,
         # the mismatch color should be replaced by current one.
-        char = image2c64.HiresChar(0)
-        prev = image2c64.HiresChar(0)
+        char = image2c64.HiresChar(self.log)
+        prev = image2c64.HiresChar(self.log)
         prev.colors = {5: 1, 9: 0}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
@@ -409,8 +484,8 @@ class TestHiresChar(TestCase):
 
         # 5. Worst case scenario. None of the colors from previous char
         # matches. Get the current colors.
-        char = image2c64.HiresChar(1)
-        prev = image2c64.HiresChar(1)
+        char = image2c64.HiresChar(self.log)
+        prev = image2c64.HiresChar(self.log)
         prev.colors = {5: 1, 6: 0}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
@@ -419,6 +494,16 @@ class TestHiresChar(TestCase):
         self.assertFalse(char._compare_colors_with_prev_char(colors, True))
         self.assertEqual(char.pixel_state, {0: True, 1: True})
         self.assertEqual(char.colors, {9: 1, 8: 0})
+
+    def test__fix_color_clash(self):
+        """Test for repait color clash"""
+        char = image2c64.HiresChar(self.log, prev=None, fix_clash=True)
+        char.pixels = {(0, 0): 2, (0, 1): 1, (0, 2): 1, (0, 3): 7,
+                       (0, 4): 2, (0, 5): 2, (0, 6): 3, (0, 7): 4}
+        char._analyze_color_map()
+        self.assertEqual(char.pixels,
+                         {(0, 0): 2, (0, 1): 1, (0, 2): 1, (0, 3): 1,
+                          (0, 4): 2, (0, 5): 2,(0, 6): 2, (0, 7): 2})
 
 
 class TestLogger(TestCase):

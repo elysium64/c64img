@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-image2c64 v2.0 converts virtually any image supported by Pillow to C64 hires
+image2c64 v2.1 converts virtually any image supported by Pillow to C64 hires
 or multicolor formats. Best results are achived with filetypes PNG or GIF.
 """
 import sys
@@ -24,6 +24,11 @@ except ImportError:
 # Palettes are organized with original C64 order:
 # black, white, red, magenta, purple, green, dark blue, yellow,
 # orange, brown, pink, dark gray, gray, light green, light blue, light gray
+
+(BLACK, WHITE, RED, MAGENTA, PURPLE, GREEN, DARK_BLUE, YELLOW,
+ ORANGE, BROWN, PINK, DARK_GRAY, GRAY, LIGHT_GREEN, LIGHT_BLUE,
+ LIGHT_GRAY) = range(16)
+
 PALETTES = {'Vice': ((0x00, 0x00, 0x00), (0xFF, 0xFF, 0xFF),
                      (0x9a, 0x53, 0x48), (0x8c, 0xc9, 0xd1),
                      (0x9b, 0x5a, 0xbb), (0x7b, 0xb7, 0x54),
@@ -56,7 +61,26 @@ PALETTES = {'Vice': ((0x00, 0x00, 0x00), (0xFF, 0xFF, 0xFF),
                       (0x9A, 0x67, 0x59), (0x44, 0x44, 0x44),
                       (0x6C, 0x6C, 0x6C), (0x9A, 0xD2, 0x84),
                       (0x6C, 0x5E, 0xB5), (0x95, 0x95, 0x95))}
-
+COLOR_SUBS = {BLACK: [DARK_GRAY, BROWN, DARK_BLUE],
+              WHITE: [LIGHT_GRAY, LIGHT_GRAY],
+              RED: [DARK_GRAY, GRAY, PURPLE],
+              MAGENTA: [LIGHT_GRAY, GRAY, LIGHT_BLUE],
+              PURPLE: [GRAY, DARK_GRAY, RED, ORANGE],
+              GREEN: [GRAY, LIGHT_GRAY, YELLOW, LIGHT_GREEN],
+              DARK_BLUE: [DARK_GRAY, BROWN, LIGHT_BLUE, BLACK],
+              YELLOW: [LIGHT_GRAY, LIGHT_GREEN, WHITE],
+              ORANGE: [GRAY, DARK_GRAY, PURPLE, BROWN],
+              BROWN: [DARK_GRAY, DARK_BLUE, RED, BLACK],
+              PINK: [GRAY, LIGHT_GRAY, GREEN, RED],
+              DARK_GRAY: [GRAY, BROWN, DARK_BLUE, BLACK],
+              GRAY: [LIGHT_GRAY, GREEN, LIGHT_BLUE, ORANGE, PURPLE, PINK],
+              LIGHT_GREEN: [LIGHT_GRAY, YELLOW, WHITE],
+              LIGHT_BLUE: [GRAY, LIGHT_GRAY, MAGENTA],
+              LIGHT_GRAY: [LIGHT_GREEN, YELLOW, GRAY, WHITE]}
+COLOR_NAMES = dict(enumerate(["Black", "White", "Red", "Magenta", "Purple",
+                              "Green", "Dark blue", "Yellow", "Orange",
+                              "Brown", "Pink", "Dark gray", "Gray",
+                              "Light green", "Light blue", "Light gray"]))
 
 class Logger(object):
     """
@@ -114,16 +138,20 @@ class Char(object):
     Char implementation
     """
 
-    def __init__(self, prev=None):
+    def __init__(self, log, prev=None, fix_clash=False):
         """
         Init. prev is the Char object which represents the same character in
         previous picture
         """
+        self.background = None
         self.clash = False
         self.colors = {}
         self.max_colors = 2
         self.pixels = {}
+        self.pixel_state = {0: False, 1: False}
         self.prev = prev
+        self.log = log
+        self._fix_clash = fix_clash
 
     def _analyze_color_map(self):
         """
@@ -132,7 +160,9 @@ class Char(object):
         """
 
         if self._check_clash():
-            return
+            if not self._fix_clash:
+                return
+            self._fix_color_clash()
 
         if self.prev and self.prev.clash:
             return
@@ -157,19 +187,86 @@ class Char(object):
 
         self._analyze_color_map()
 
+    def _fix_color_clash(self):
+        """
+        Try to fix the color clashes by assigning excessed colors to existing
+        in the char
+        """
+        colors = Counter(self.pixels.values())
+        base = colors.most_common(self.max_colors)
+        remapped_colors = {}
+        index = self.max_colors
+
+        if self.background is not None and self.background not in dict(base):
+            index -= 1
+            base = colors.most_common(index)
+            base += [(self.background, 0)]
+
+        for col, dummy in colors.most_common()[index:]:
+            sub = get_the_substitute(col, base)
+            if sub is not None:
+                self.log.debug("Using color '%s' instead '%s'",
+                               COLOR_NAMES[sub],
+                               COLOR_NAMES[col])
+                remapped_colors[col] = sub
+            elif self.background is not None:
+                self.log.warning("Cannot remap color; using background - '%s'",
+                                COLOR_NAMES[self.background])
+                remapped_colors[col] = self.background
+            else:
+                self.log.warning("Cannot remap color; using first - '%s'",
+                                 COLOR_NAMES[base[0][0]])
+                remapped_colors[col] = base[0][0]
+
+        for coord, color in self.pixels.items():
+            if color not in remapped_colors:
+                continue
+            self.pixels[coord] = remapped_colors[color]
+
+        # Clashes are fixed (probably)
+        self.clash = False
+
     def _check_clash(self):
         """
         Check color clash. max_colors is the maximum colors per char object
         """
-        if len(set([x for x in self.pixels.values()])) > self.max_colors:
+        colors = Counter(self.pixels.values())
+
+        if len(colors) > self.max_colors:
             self.clash = True
+
+        if self.background is None:
+            return self.clash
+
+        if len(colors) == self.max_colors and self.background not in colors:
+            self.clash = True
+
         return self.clash
 
     def _compare_colors_with_prev_char(self, colors, repeat=False):
         """
         Make a color map to the pixels comparing to the previous data
         """
-        raise NotImplementedError
+        needs_repeat = False
+        for color in colors:
+            if color == self.background:
+                continue
+            if repeat:
+                if color in self.colors:
+                    continue
+
+                for pair, taken in self.pixel_state.items():
+                    if not taken:
+                        self.pixel_state[pair] = True
+                        self.colors[color] = pair
+                        break
+            elif self.prev and self.prev.colors.get(color, None) is not None:
+                self.colors[color] = self.prev.colors[color]
+                self.pixel_state[self.prev.colors[color]] = True
+            else:
+                needs_repeat = True
+
+        return needs_repeat
 
     def _compare_colors(self, colors):
         """
@@ -184,16 +281,6 @@ class HiresChar(Char):
     Hires char implementation
     """
 
-    def __init__(self, mfc, prev=None):
-        """
-        Init. prev is the Char object which represents the same character
-        in previous picture. Mfc stands for most frequent color, which will be
-        preferred as a background for a character, if exists in char colors.
-        """
-        super(HiresChar, self).__init__(prev)
-        self._mfc = mfc
-        self.pixel_state = {0: False, 1: False}
-
     def get_binary_data(self):
         """
         Return binary data for the char
@@ -203,73 +290,32 @@ class HiresChar(Char):
         for row in zip(*[iter(sorted(self.pixels))] * 8):
             char_line = 0
             for idx, pixel in enumerate(row):
-                bit_ = self.colors.get(self.pixels[pixel], self._mfc)
+                bit_ = self.colors.get(self.pixels[pixel], 0)
                 char_line += bit_ * 2 ** (7 - idx)
             result['bitmap'].append(char_line)
 
         colors = dict([(y, x) for x, y in self.colors.items()])
-        result['screen-ram'] = colors.get(0, self._mfc)
+        result['screen-ram'] = colors.get(0)
         if 1 in colors:
             result['screen-ram'] += colors[1] * 16
         return result
-
-    def _compare_colors_with_prev_char(self, colors, repeat=False):
-        """
-        Make a color map to the pixels comparing to the previous data
-        """
-        needs_repeat = False
-        if repeat:
-            if self._mfc in colors and not self.pixel_state[0] \
-                    and not self.pixel_state[1]:
-                self.pixel_state[0] = True
-                self.colors[self._mfc] = 0
-
-        for color in colors:
-            if repeat:
-                for value, taken in self.pixel_state.items():
-                    if not taken and color not in self.colors.values():
-                        self.pixel_state[value] = True
-                        self.colors[color] = value
-                        break
-            elif self.prev and self.prev.colors.get(color, None) is not None:
-                self.colors[color] = self.prev.colors[color]
-                self.pixel_state[self.prev.colors[color]] = True
-            else:
-                needs_repeat = True
-
-        return needs_repeat
 
 
 class MultiChar(Char):
     """Char implementation for multicolor mode."""
 
-    def __init__(self, background, prev=None):
+    def __init__(self, log, background, prev=None, fix_clash=False):
         """
         Init. prev is the Char object which represents the same character
         in previous picture
         """
-        super(MultiChar, self).__init__(prev)
+        super(MultiChar, self).__init__(log, prev, fix_clash)
+
         self.background = background
         self.max_colors = 4
-        self.pairs = {(0, 1): False,
-                      (1, 0): False,
-                      (1, 1): False}
-
-    def _check_clash(self):
-        """
-        Check color clash. max_colors is the maximum colors per char object
-        """
-        super(MultiChar, self)._check_clash()
-        if self.clash:
-            return self.clash
-
-        colors_list = list(set([x for x in self.pixels.values()]))
-        if self.background in colors_list:
-            return self.clash
-        elif len(colors_list) == self.max_colors:
-            self.clash = True
-
-        return self.clash
+        self.pixel_state = {(0, 1): False,
+                            (1, 0): False,
+                            (1, 1): False}
 
     def _analyze_color_map(self):
         """
@@ -302,31 +348,6 @@ class MultiChar(Char):
         result["color-ram"] = colors.get((1, 1), colors.get((0, 0)))
 
         return result
-
-    def _compare_colors_with_prev_char(self, colors, repeat=False):
-        """
-        Make a color map to the pixels comparing to the previous data
-        """
-        needs_repeat = False
-        for color in colors:
-            if color == self.background:
-                continue
-            if repeat:
-                if color in self.colors:
-                    continue
-
-                for pair, taken in self.pairs.items():
-                    if not taken:
-                        self.pairs[pair] = True
-                        self.colors[color] = pair
-                        break
-            elif self.prev and self.prev.colors.get(color, None) is not None:
-                self.colors[color] = self.prev.colors[color]
-                self.pairs[self.prev.colors[color]] = True
-            else:
-                needs_repeat = True
-
-        return needs_repeat
 
 
 class FullScreenImage(object):
@@ -518,6 +539,8 @@ class FullScreenImage(object):
         if background is None:
             background = self.data.get("most_freq_color", 0)
 
+        self.log.debug("Setting color '%s' as background.",
+                       COLOR_NAMES[background])
         return background
 
     def _error_image_action(self, error_list, scaled=False):
@@ -532,17 +555,28 @@ class FullScreenImage(object):
             return
 
         image = self._src_image.copy().convert("RGBA")
-        if scaled and self._errors_action != "grafx2":
+
+
+        # TODO: refactor this crap below
+        if scaled:
             image = image.resize((320, 200))
-            char_x_size = 2
+
+        if image.size[0] == 320:
             x_offset = 7
+            if scaled:
+                char_x_size = 2
+
+        if image.size[0] == 160:
+            char_x_size = 1
 
         image_map = image.copy()
         drawable = Draw(image_map)
 
         for chrx, chry in error_list:
-            drawable.rectangle((chrx * char_x_size, chry,
-                                chrx * char_x_size + x_offset, chry + 7),
+            drawable.rectangle((chrx * char_x_size,
+                                chry,
+                                chrx * char_x_size + x_offset,
+                                chry + 7),
                                outline="red")
 
         image = Image.blend(image, image_map, 0.65)
@@ -577,6 +611,7 @@ class MultiConverter(FullScreenImage):
         Initialization
         """
         super(MultiConverter, self).__init__(fname, errors_action)
+        self._scaled = False
         self._save_map = {"prg": self._save_prg,
                           "raw": self._save_raw,
                           "multi": self._save_koala,  # sane default
@@ -590,6 +625,7 @@ class MultiConverter(FullScreenImage):
         if super(MultiConverter, self)._load():
             if self._src_image.size == (320, 200):
                 self._src_image = self._src_image.resize((160, 200))
+                self._scaled = True
             return True
         return False
 
@@ -644,8 +680,10 @@ class MultiConverter(FullScreenImage):
             box = self._src_image.crop((chrx, chry,
                                         chrx + 4, chry + 8)).convert("RGB")
 
-            char = MultiChar(self.data["background"],
-                             self.prev_chars.get((chry, chrx)))
+            char = MultiChar(self.log,
+                             self.data["background"],
+                             self.prev_chars.get((chry, chrx)),
+                             self._errors_action == "fix")
             char.process(box, self._palette_map)
             self.chars[(chry, chrx)] = char
 
@@ -657,11 +695,14 @@ class MultiConverter(FullScreenImage):
             if char.clash:
                 error_list.append((chrx, chry))
                 self.log.error("Too many colors per block in char %d, %d near"
-                               " x=%d, y=%d.", chrx, chry, chrx * 8 + 4,
-                               chry * 8 + 4)
+                               " x=%d, y=%d.",
+                               chrx / 8 + 1,
+                               chry / 8 + 1,
+                               chrx + 4,
+                               chry + 4)
 
         if error_list:
-            self._error_image_action(error_list, True)
+            self._error_image_action(error_list, self._scaled)
             return False
 
         self.log.info("Conversion successful.")
@@ -775,8 +816,9 @@ class HiresConverter(FullScreenImage):
             box = self._src_image.crop((chrx, chry,
                                         chrx + 8, chry + 8)).convert("RGB")
 
-            char = HiresChar(self.data['most_freq_color'],
-                             self.prev_chars.get((chry, chrx)))
+            char = HiresChar(self.log,
+                             self.prev_chars.get((chry, chrx)),
+                             self._errors_action == "fix")
             char.process(box, self._palette_map)
             self.chars[(chry, chrx)] = char
 
@@ -787,8 +829,11 @@ class HiresConverter(FullScreenImage):
             if char.clash:
                 error_list.append((chrx, chry))
                 self.log.error("Too many colors per block in char %d, %d near"
-                               " x=%d, y=%d.", chrx, chry,
-                               chrx * 8 + 4, chry * 8 + 4)
+                               " x=%d, y=%d.",
+                               chrx / 8 + 1,
+                               chry / 8 + 1,
+                               chrx + 4,
+                               chry + 4)
 
         if error_list:
             self._error_image_action(error_list)
@@ -859,6 +904,19 @@ class HiresConverter(FullScreenImage):
             self.log.error("Wrong picture dimensions: %dx%d", width, height)
 
         return result
+
+
+def get_the_substitute(color, base):
+    """Return best match for provided color out of base and background"""
+    sub_color = None
+    index = 16
+    for col, dummy in base:
+        if col in COLOR_SUBS[color]:
+            if COLOR_SUBS[color].index(col) < index:
+                index = COLOR_SUBS[color].index(col)
+                sub_color = col
+
+    return sub_color
 
 
 def get_modified_fname(fname, ext, suffix='.'):
@@ -991,11 +1049,12 @@ def main():
                         choices=range(16))
     parser.add_argument("-g", "--background", help="set color number for "
                         "background", type=int, choices=range(16))
-    parser.add_argument("-e", "--errors", help="save errormap under the "
-                        "same name with '_error' suffix, show it, open in "
-                        "grafx2, or don't do anything (conversion stops "
-                        "anyway)", default="none",
-                        choices=("show", "save", "grafx2", "none"))
+    parser.add_argument("-e", "--errors", help="perform the action in case of "
+                        "color clashes: save errormap under the same name "
+                        "with '_error' suffix, show it, open in grafx2, fix "
+                        "it, or don't do anything (the message appear)",
+                        default="none", choices=("show", "save", "grafx2",
+                                                 "fix", "none"))
     parser.add_argument("-f", "--format", help="format of output file, this "
                         "option is mandatory", choices=f_map.keys(),
                         required=True)
