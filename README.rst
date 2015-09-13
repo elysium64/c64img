@@ -2,8 +2,9 @@
 C64img
 ======
 
-C64img is a python module which provides several possible conversion between
-various graphics formats and C64 formats or even raw data.
+C64img is a python package which provides an abstraction layer for creating
+images which Commodore 64 understands. This is especially useful in converting
+images created on PC graphics tools, with C64 limitation in mind.
 
 This project was inspired by `PNG2HIRES_ v0.2 gfx format converter`_ /enthusi
 (onslaught), which was initially used as simple graphics converter between
@@ -34,8 +35,21 @@ Requirements:
 Installation
 ------------
 
-There is no need for installing this script. For convenience it may be placed
-somewhere in the ``PATH`` environment variable.
+Like other standard Python pro programs, ``c64img`` provide a convenient way to
+install using `setuptools`_, so the procedure will look like:
+
+.. code:: shell-session
+
+   $ python setup.py install
+
+or, `pip`_ might be used as well:
+
+.. code:: shell-session
+
+   $ pip install -e /path/to/c64img_repository
+
+After that, you should be able to access ``image2c64`` script or import
+``c64img`` module in Python interpreter.
 
 Usage:
 ------
@@ -44,7 +58,7 @@ First of all, check up the switches program provides:
 
 .. code:: shell-session
 
-   $ ./image2c64 --help
+   $ image2c64 --help
 
 Examples:
 
@@ -52,7 +66,7 @@ Examples:
 
   .. code:: shell-session
 
-     $ ./image2c64 -vvv -f koala image.png
+     $ image2c64 -vvv -f koala image.png
 
   Output will be written to ``image.prg``.
 
@@ -61,14 +75,13 @@ Examples:
 
   .. code:: shell-session
 
-     $ ./image2c64 -f hires -x -o output.prg image.gif
+     $ image2c64 -f hires -x -o output.prg image.gif
 
 + Convert several images to raw data. Put the files in ``out`` directory:
 
   .. code:: shell-session
 
-     $ ./image2c64 -f multi -r -o out image.png image1.gif image2.gif image3.gif
-
+     $ image2c64 -f multi -r -o out image.png image1.gif image2.gif image3.gif
 
 Script can make several things in case of color clashes. In C64 graphics modes
 you cannot put pixels in as one like, since there was hardware limitations
@@ -151,3 +164,5 @@ either expressed or implied, of the FreeBSD Project.
 .. _pillow: https://github.com/python-imaging/Pillow
 .. _grafx2: http://pulkomandy.tk/projects/GrafX2
 .. _python 2.7: https://www.python.org/
+.. _setuptools: https://pypi.python.org/pypi/setuptools
+.. _pip: https://github.com/pypa/pip
