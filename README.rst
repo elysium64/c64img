@@ -1,11 +1,23 @@
+======
+C64img
+======
+
+C64img is a python module which provides several possible conversion between
+various graphics formats and C64 formats or even raw data.
+
+This project was inspired by `PNG2HIRES_ v0.2 gfx format converter`_ /enthusi
+(onslaught), which was initially used as simple graphics converter between
+PNG/GIF images to C64 hires (Art studio + executable). It evolved to bunch of
+modules, which have own purposes - from simply converting graphics, to
+generating data for C64 programs written in cross compilers, or even generating
+data for memory optimised animations out of sequence of images.
+
 Image2c64
 =========
 
-Image2c64 is a program which can converts virtually any image supported by
-`Pillow`_ to C64 hires or multicolor formats. Best results are achieved with
-filetypes PNG or GIF.
-
-Inspired on `PNG2HIRES_ v0.2 gfx format converter`_ /enthusi (onslaught)
+Image2c64 is a frontend program to ``c64img`` module, which can converts
+virtually any image supported by `Pillow`_ to C64 hires or multicolor formats.
+Best results are achieved with filetypes PNG or GIF.
 
 As an input 320x200 (multicolor or hires) or 160x200 (mutlicolor) picture is
 expected. Mutlicolor pictures will be scaled down to 160x200. Picture will be
@@ -64,7 +76,7 @@ you cannot put pixels in as one like, since there was hardware limitations
 modes. For example, in standard hires mode (320x200) it is impossible to use
 more than 2 colors in 8x8 pixel area.
 
-Image2c64 allows to make several things with color clash situation:
+Underneath, c64img provides several options for color clash situation:
 
 - no parameter or ``none`` - raport it on the console
 - ``show`` - will display it - every wrong area will be marked with red
@@ -93,6 +105,7 @@ Example of output for ``save`` and ``fix`` arguments for ``--error`` parameter:
 Changes
 -------
 
++ 2015-09-10 Rearranged repository into separate modules for maintainability
 + 2014-11-16 Added mechanism for automatic clashes fix
 + 2014-11-11 Fixed issue with color clash check in multicolor
 + 2014-11-11 Added ``grafx2`` option into error param. In such case image will

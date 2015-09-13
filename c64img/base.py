@@ -1,25 +1,16 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
-image2c64 v2.1 converts virtually any image supported by Pillow to C64 hires
-or multicolor formats. Best results are achived with filetypes PNG or GIF.
+C64lib module holds all information needed to provide abstraction to low level
+graphic related operation and conbertion in Python.
 """
-import sys
 import os
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
-import logging
 from collections import Counter
+import logging
 
 from PIL import Image
 from PIL.ImageDraw import Draw
 
-# Hack to make Windows behavie.
-try:
-    import msvcrt
-    msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
-except ImportError:
-    pass
-
+from c64img.path import get_modified_fname
+from c64img.logger import Logger
 
 # Palettes are organized with original C64 order:
 # black, white, red, magenta, purple, green, dark blue, yellow,
@@ -81,56 +72,6 @@ COLOR_NAMES = dict(enumerate(["Black", "White", "Red", "Magenta", "Purple",
                               "Green", "Dark blue", "Yellow", "Orange",
                               "Brown", "Pink", "Dark gray", "Gray",
                               "Light green", "Light blue", "Light gray"]))
-
-class Logger(object):
-    """
-    Logger class with output on console only
-    """
-    def __init__(self, logger_name):
-        """
-        Initialize named logger
-        """
-        self._log = logging.getLogger(logger_name)
-        self.setup_logger()
-        self._log.set_verbose = self.set_verbose
-
-    def __call__(self):
-        """
-        Calling this object will return configured logging.Logger object with
-        additional set_verbose() method.
-        """
-        return self._log
-
-    def set_verbose(self, verbose_level, quiet_level):
-        """
-        Change verbosity level. Default level is warning.
-        """
-        self._log.setLevel(logging.WARNING)
-
-        if quiet_level:
-            self._log.setLevel(logging.ERROR)
-            if quiet_level > 1:
-                self._log.setLevel(logging.CRITICAL)
-
-        if verbose_level:
-            self._log.setLevel(logging.INFO)
-            if verbose_level > 1:
-                self._log.setLevel(logging.DEBUG)
-
-    def setup_logger(self):
-        """
-        Create setup instance and make output meaningful :)
-        """
-        if self._log.handlers:
-            # need only one handler
-            return
-
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.set_name("console")
-        console_formatter = logging.Formatter("%(levelname)s: %(message)s")
-        console_handler.setFormatter(console_formatter)
-        self._log.addHandler(console_handler)
-        self._log.setLevel(logging.WARNING)
 
 
 class Char(object):
@@ -203,7 +144,7 @@ class Char(object):
             base += [(self.background, 0)]
 
         for col, dummy in colors.most_common()[index:]:
-            sub = get_the_substitute(col, base)
+            sub = _get_the_substitute(col, base)
             if sub is not None:
                 self.log.debug("Using color '%s' instead '%s'",
                                COLOR_NAMES[sub],
@@ -211,7 +152,7 @@ class Char(object):
                 remapped_colors[col] = sub
             elif self.background is not None:
                 self.log.warning("Cannot remap color; using background - '%s'",
-                                COLOR_NAMES[self.background])
+                                 COLOR_NAMES[self.background])
                 remapped_colors[col] = self.background
             else:
                 self.log.warning("Cannot remap color; using first - '%s'",
@@ -276,80 +217,6 @@ class Char(object):
             self._compare_colors_with_prev_char(colors, True)
 
 
-class HiresChar(Char):
-    """
-    Hires char implementation
-    """
-
-    def get_binary_data(self):
-        """
-        Return binary data for the char
-        """
-        result = {"bitmap": [], "screen_ram": 0}
-
-        for row in zip(*[iter(sorted(self.pixels))] * 8):
-            char_line = 0
-            for idx, pixel in enumerate(row):
-                bit_ = self.colors.get(self.pixels[pixel], 0)
-                char_line += bit_ * 2 ** (7 - idx)
-            result['bitmap'].append(char_line)
-
-        colors = dict([(y, x) for x, y in self.colors.items()])
-        result['screen-ram'] = colors.get(0)
-        if 1 in colors:
-            result['screen-ram'] += colors[1] * 16
-        return result
-
-
-class MultiChar(Char):
-    """Char implementation for multicolor mode."""
-
-    def __init__(self, log, background, prev=None, fix_clash=False):
-        """
-        Init. prev is the Char object which represents the same character
-        in previous picture
-        """
-        super(MultiChar, self).__init__(log, prev, fix_clash)
-
-        self.background = background
-        self.max_colors = 4
-        self.pixel_state = {(0, 1): False,
-                            (1, 0): False,
-                            (1, 1): False}
-
-    def _analyze_color_map(self):
-        """
-        Check for the optimal color placement in char. This method may be run
-        only on not clashed chars. Background color should be always
-        available.
-        """
-        self.colors[self.background] = (0, 0)
-        super(MultiChar, self)._analyze_color_map()
-
-    def get_binary_data(self):
-        """
-        Return binary data for the char
-        """
-        result = {"bitmap": [], "screen-ram": 0, "color-ram": 0}
-
-        for row in zip(*[iter(sorted(self.pixels))] * 4):
-            char_line = 0
-            for idx, pixel in enumerate(row):
-                bits = self.colors.get(self.pixels[pixel], (0, 0))
-                char_line += bits[0] * 2 ** (7 - idx * 2)
-                char_line += bits[1] * 2 ** (6 - idx * 2)
-            result["bitmap"].append(char_line)
-
-        colors = dict([(y, x) for x, y in self.colors.items()])
-        col1 = colors.get((0, 1), colors.get((0, 0))) * 16
-        col2 = colors.get((1, 0), colors.get((0, 0)))
-
-        result["screen-ram"] = col1 + col2
-        result["color-ram"] = colors.get((1, 1), colors.get((0, 0)))
-
-        return result
-
-
 class FullScreenImage(object):
     """
     Class represents full-screen image in unspecified C64 format
@@ -381,12 +248,13 @@ class FullScreenImage(object):
         """
         if not self.data.get('bitmap'):
             if not self._convert():
-                return False
+                return 1
 
         if os.path.exists(filename):
             self.log.warning("File `%s' will be overwritten", filename)
 
-        return self._save_map[format_](filename)
+        if self._save_map[format_](filename):
+            return 0
 
     def set_bg_color(self, color):
         """
@@ -505,7 +373,7 @@ class FullScreenImage(object):
             quality = 0
             palettes_map[pal_name] = {}
             for orig_color in src_pal:
-                color2use, delta = best_color_match(orig_color, pal)
+                color2use, delta = _best_color_match(orig_color, pal)
                 quality += delta
                 palettes_map[pal_name][orig_color] = color2use
             if nearest_match < 0 or nearest_match > quality:
@@ -556,7 +424,6 @@ class FullScreenImage(object):
 
         image = self._src_image.copy().convert("RGBA")
 
-
         # TODO: refactor this crap below
         if scaled:
             image = image.resize((320, 200))
@@ -596,317 +463,7 @@ class FullScreenImage(object):
             clashes.show()
 
 
-class MultiConverter(FullScreenImage):
-    """
-    Convert bitmap graphic in png/gif/probably other formats supported by
-    PIL prepared as multicolor image into executable C64 prg file suitable
-    to transfer to real thing or run in emulator.
-    """
-    WIDTH = 160
-    HEIGHT = 200
-    LOGGER_NAME = "MultiConverter"
-
-    def __init__(self, fname, errors_action="none"):
-        """
-        Initialization
-        """
-        super(MultiConverter, self).__init__(fname, errors_action)
-        self._scaled = False
-        self._save_map = {"prg": self._save_prg,
-                          "raw": self._save_raw,
-                          "multi": self._save_koala,  # sane default
-                          "koala": self._save_koala}
-
-    def _load(self):
-        """
-        Load source image and store it under _src_image attribute.
-        Shrink it if needed to 160x200 pixels.
-        """
-        if super(MultiConverter, self)._load():
-            if self._src_image.size == (320, 200):
-                self._src_image = self._src_image.resize((160, 200))
-                self._scaled = True
-            return True
-        return False
-
-    def _check_dimensions(self):
-        """
-        Check for image dimensions. If different from 320x200 or 160x200
-        return False
-        """
-        result = super(MultiConverter, self)._check_dimensions()
-
-        width, height = self._src_image.size
-        if width == MultiConverter.WIDTH and height == MultiConverter.HEIGHT:
-            return True
-
-        if not result:
-            self.log.error("Wrong picture dimensions: %dx%d", width, height)
-        return result
-
-    def _get_displayer(self):
-        """
-        Get displayer for multicolor picture (based on kickassembler example)
-        """
-        border = chr(self._get_border())
-        background = chr(self._get_background())
-        displayer = ["\x01\x08\x0b\x08\n\x00\x9e2064\x00\x00\x00\x00\x00\x00"
-                     "\xa98\x8d\x18\xd0\xa9\xd8\x8d\x16\xd0\xa9;\x8d\x11\xd0"
-                     "\xa9", border, "\x8d \xd0\xa9", background, "\x8d!\xd0"
-                     "\xa2\x00\xbd\x00\x1c\x9d\x00\xd8\xbd\x00\x1d\x9d\x00"
-                     "\xd9\xbd\x00\x1e\x9d\x00\xda\xbd\x00\x1f\x9d\x00\xdb"
-                     "\xe8\xd0\xe5LF\x08"]
-
-        return "".join(displayer)
-
-    def _fill_memory(self):
-        """
-        Create bitmap, screen-ram, color-ram and error map as a picture if
-        needed.
-        """
-        self.data["bitmap"] = []
-        self.data["screen-ram"] = []
-        self.data["color-ram"] = []
-        self.data["background"] = self._get_background()
-        self.data["chars"] = []
-
-        error_list = []
-
-        # get every char (4x8 pixels) starting from upper left corner
-        for chry, chrx in [(chry, chrx)
-                           for chry in range(0, self._src_image.size[1], 8)
-                           for chrx in range(0, self._src_image.size[0], 4)]:
-
-            box = self._src_image.crop((chrx, chry,
-                                        chrx + 4, chry + 8)).convert("RGB")
-
-            char = MultiChar(self.log,
-                             self.data["background"],
-                             self.prev_chars.get((chry, chrx)),
-                             self._errors_action == "fix")
-            char.process(box, self._palette_map)
-            self.chars[(chry, chrx)] = char
-
-            char_data = char.get_binary_data()
-            self.data['bitmap'].extend(char_data['bitmap'])
-            self.data['screen-ram'].append(char_data['screen-ram'])
-            self.data['color-ram'].append(char_data['color-ram'])
-
-            if char.clash:
-                error_list.append((chrx, chry))
-                self.log.error("Too many colors per block in char %d, %d near"
-                               " x=%d, y=%d.",
-                               chrx / 8 + 1,
-                               chry / 8 + 1,
-                               chrx + 4,
-                               chry + 4)
-
-        if error_list:
-            self._error_image_action(error_list, self._scaled)
-            return False
-
-        self.log.info("Conversion successful.")
-        return True
-
-    def _save_prg(self, filename):
-        """
-        Save executable version of the picture
-        """
-        file_obj = open(filename, "wb")
-        file_obj.write(self._get_displayer())
-        file_obj.write(951 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
-        file_obj.write(3096 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["color-ram"]]))
-        file_obj.write(24 * chr(0))
-        file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
-        file_obj.close()
-        self.log.info("Saved executable under `%s' file", filename)
-        return True
-
-    def _save_koala(self, filename):
-        """
-        Save as Koala format
-        """
-        file_obj = open(filename, "wb")
-        file_obj.write("%c%c" % (0x00, 0x60))
-
-        for char in self.data['bitmap']:
-            file_obj.write("%c" % char)
-
-        for char in self.data["screen-ram"]:
-            file_obj.write("%c" % char)
-
-        for char in self.data["color-ram"]:
-            file_obj.write("%c" % char)
-
-        file_obj.write(chr(self.data["background"]))
-
-        border = self._get_border()
-        file_obj.write("%c" % border)
-        file_obj.close()
-        self.log.info("Saved in Koala format under `%s' file", filename)
-        return True
-
-    def _save_raw(self, filename):
-        """
-        Save as raw data
-        """
-
-        with open(filename + "_bitmap.raw", "wb") as file_obj:
-            for char in self.data['bitmap']:
-                file_obj.write("%c" % char)
-
-        with open(filename + "_screen.raw", "wb") as file_obj:
-            for char in self.data["screen-ram"]:
-                file_obj.write("%c" % char)
-
-        with open(filename + "_color-ram.raw", "wb") as file_obj:
-            for char in self.data["color-ram"]:
-                file_obj.write("%c" % char)
-
-        with open(filename + "_bg.raw", "wb") as file_obj:
-            file_obj.write(chr(self.data["background"]))
-
-        self.log.info("Saved in raw format under `%s_*' files", filename)
-        return True
-
-
-class HiresConverter(FullScreenImage):
-    """
-    Convert bitmap graphic in png/gif/probably other formats supported by
-    PIL into executable C64 prg file suitable to transfer to real thing or
-    run in emulator.
-    """
-    LOGGER_NAME = "HiresConverter"
-
-    def __init__(self, fname, errors_action="none"):
-        """
-        Initialization
-        """
-        super(HiresConverter, self).__init__(fname, errors_action)
-        self._save_map = {"prg": self._save_prg,
-                          "raw": self._save_raw,
-                          "hires": self._save_ash,  # make sane default
-                          "art-studio-hires": self._save_ash}
-
-    def _get_displayer(self):
-        """
-        Get displayer for hires picture
-        """
-        border = "%c" % self._get_border()
-        displayer = ["\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x34\x00"
-                     "\x00\x00\x00\x00\x00\x78\xa9", border, "\x8d\x20\xd0\xa9"
-                     "\x00\x8d\x21\xd0\xa9\xbb\x8d\x11\xd0\xa9\x3c\x8d"
-                     "\x18\xd0\x4c\x25\x08"]
-        return "".join(displayer)
-
-    def _fill_memory(self):
-        """
-        Create bitmap/screen and error map as a picture if needed.
-        """
-        self.data["bitmap"] = []
-        self.data["screen-ram"] = []
-        error_list = []
-
-        for chry, chrx in [(chry, chrx)
-                           for chry in range(0, self._src_image.size[1], 8)
-                           for chrx in range(0, self._src_image.size[0], 8)]:
-
-            box = self._src_image.crop((chrx, chry,
-                                        chrx + 8, chry + 8)).convert("RGB")
-
-            char = HiresChar(self.log,
-                             self.prev_chars.get((chry, chrx)),
-                             self._errors_action == "fix")
-            char.process(box, self._palette_map)
-            self.chars[(chry, chrx)] = char
-
-            char_data = char.get_binary_data()
-            self.data['bitmap'].extend(char_data['bitmap'])
-            self.data['screen-ram'].append(char_data['screen-ram'])
-
-            if char.clash:
-                error_list.append((chrx, chry))
-                self.log.error("Too many colors per block in char %d, %d near"
-                               " x=%d, y=%d.",
-                               chrx / 8 + 1,
-                               chry / 8 + 1,
-                               chrx + 4,
-                               chry + 4)
-
-        if error_list:
-            self._error_image_action(error_list)
-            return False
-
-        self.log.info("Conversion successful.")
-        return True
-
-    def _save_prg(self, filename):
-        """
-        Save executable version of the picture
-        """
-        file_obj = open(filename, "wb")
-        file_obj.write(self._get_displayer())
-        file_obj.write(984 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
-        file_obj.write(4120 * chr(0))
-        file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
-        file_obj.close()
-        self.log.info("Saved executable under `%s' file", filename)
-        return True
-
-    def _save_ash(self, filename):
-        """
-        Save as Art Studio hires
-        """
-        file_obj = open(filename, "wb")
-        file_obj.write("%c%c" % (0x00, 0x20))
-
-        for char in self.data['bitmap']:
-            file_obj.write("%c" % char)
-
-        for char in self.data["screen-ram"]:
-            file_obj.write("%c" % char)
-
-        border = self._get_border()
-        file_obj.write("%c" % border)
-        file_obj.write("\x00\x00\x00\x00\x00\x00")
-        file_obj.close()
-        self.log.info("Saved in Art Studio Hires format under `%s' file",
-                      filename)
-        return True
-
-    def _save_raw(self, filename):
-        """
-        Save raw data
-        """
-        with open(filename + "_screen.raw", "wb") as file_obj:
-            file_obj.write("".join([chr(col)
-                                    for col in self.data["screen-ram"]]))
-
-        with open(filename + "_bitmap.raw", "wb") as file_obj:
-            file_obj.write("".join([chr(byte)
-                                    for byte in self.data["bitmap"]]))
-
-        self.log.info("Saved raw data under `%s_*' files", filename)
-        return True
-
-    def _check_dimensions(self):
-        """
-        Check for image dimensions. Same as in superclass, needed for feedback
-        only.
-        """
-        result = super(HiresConverter, self)._check_dimensions()
-        width, height = self._src_image.size
-
-        if not result:
-            self.log.error("Wrong picture dimensions: %dx%d", width, height)
-
-        return result
-
-
-def get_the_substitute(color, base):
+def _get_the_substitute(color, base):
     """Return best match for provided color out of base and background"""
     sub_color = None
     index = 16
@@ -919,47 +476,7 @@ def get_the_substitute(color, base):
     return sub_color
 
 
-def get_modified_fname(fname, ext, suffix='.'):
-    """
-    Change the name of provided filename to different. Suffix should contain
-    dot, since it is last part of the filename and dot should separate it
-    from extension. If not, dot will be added automatically.
-    """
-    path, _ = os.path.splitext(fname)
-    if not (suffix.endswith(".") or ext.startswith(".")):
-        ext = "." + ext
-    return "".join([path, suffix, ext])
-
-
-def convert(arguments, converter_class):
-    """
-    Convert pictures
-    """
-    last = conv = None
-    for fname in arguments.filename:
-        if conv:
-            last = conv
-
-        conv = converter_class(fname, arguments.errors)
-
-        if last:
-            conv.prev_chars = last.chars
-
-        if arguments.border is not None:
-            conv.set_border_color(arguments.border)
-
-        # note, that for hires pictures it doesn't make sense, and will be
-        # ignored.
-        if arguments.background is not None:
-            conv.set_bg_color(arguments.background)
-
-        conv.log.set_verbose(arguments.verbose, arguments.quiet)
-
-        filename, format_ = resolve_name(arguments, fname)
-        conv.save(filename, format_)
-
-
-def best_color_match(orig_color, colors):
+def _best_color_match(orig_color, colors):
     """
     Match provided color for closed match in colors list, and return it's
     index and delta (which indicates similarity)
@@ -983,103 +500,3 @@ def best_color_match(orig_color, colors):
             color2use = idx
 
     return color2use, delta
-
-
-def resolve_name(arguments, fname):
-    """
-    Return right name and format for an output file.
-    """
-    if arguments.output:
-        if len(arguments.filename) > 1:
-            if not os.path.exists(arguments.output):
-                os.mkdir(arguments.output)
-            if not os.path.isdir(arguments.output):
-                raise IOError("Path `%s' is not directory" % arguments.output)
-            filename = os.path.join(arguments.output,
-                                    get_modified_fname(fname, "prg"))
-        else:
-            filename = arguments.output
-    else:
-        filename = get_modified_fname(fname, "prg")
-
-    format_ = arguments.format
-
-    if arguments.executable:
-
-        format_ = "prg"
-        _, ext = os.path.splitext(filename)
-        if ext != ".prg":
-            filename = get_modified_fname(filename, "prg")
-
-    if arguments.raw:
-
-        format_ = "raw"
-        filename, ext = os.path.splitext(filename)
-
-    return filename, format_
-
-
-def multiconv(arguments):
-    """
-    Convert to multicolor picture
-    """
-    convert(arguments, MultiConverter)
-
-
-def hiresconv(arguments):
-    """
-    Convert to hires picture
-    """
-    convert(arguments, HiresConverter)
-
-
-def main():
-    """
-    Parse options, run the conversion
-    """
-    f_map = {"art-studio-hires": hiresconv,
-             "hires": hiresconv,
-             "koala": multiconv,
-             "multi": multiconv}
-
-    parser = ArgumentParser(description=__doc__,
-                            formatter_class=RawDescriptionHelpFormatter)
-    parser.add_argument("-b", "--border", help="set color number for border, "
-                        "default: most frequent color", type=int,
-                        choices=range(16))
-    parser.add_argument("-g", "--background", help="set color number for "
-                        "background", type=int, choices=range(16))
-    parser.add_argument("-e", "--errors", help="perform the action in case of "
-                        "color clashes: save errormap under the same name "
-                        "with '_error' suffix, show it, open in grafx2, fix "
-                        "it, or don't do anything (the message appear)",
-                        default="none", choices=("show", "save", "grafx2",
-                                                 "fix", "none"))
-    parser.add_argument("-f", "--format", help="format of output file, this "
-                        "option is mandatory", choices=f_map.keys(),
-                        required=True)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-x", "--executable", help="produce C64 executable as"
-                       " 'prg' file", action="store_true")
-    group.add_argument("-r", "--raw", help="produce raw files with only the "
-                       "data. Useful for include in assemblers",
-                       action="store_true")
-    parser.add_argument("-o", "--output", help="output filename, default: "
-                        "same filename as original with appropriate extension"
-                        ". If multiple files provided as the input, output "
-                        "will be treated as the directory")
-    parser.add_argument('filename', nargs="+")
-
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-q", "--quiet", help='please, be quiet. Adding more '
-                       '"q" will decrease verbosity', action="count",
-                       default=0)
-    group.add_argument("-v", "--verbose", help='be verbose. Adding more "v" '
-                       'will increase verbosity', action="count", default=0)
-
-    arguments = parser.parse_args()
-    f_map[arguments.format](arguments)
-
-
-if __name__ == "__main__":
-    main()
