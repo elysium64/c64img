@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Tests for Image2c64 <https://bitbucket.org/gryf/image2c64>
+Tests for c64img module <https://bitbucket.org/gryf/base>
 
 Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
 Date: 2012-11-20
@@ -10,36 +10,43 @@ Licence: BSD
 import os
 from unittest import TestCase, main
 import logging
-from tempfile import mkstemp
 
 from PIL import Image
+
+from c64img import base
+
+
 Image.Image.show = lambda x: None
 
-import image2c64
 
-CLASH_H = "test_images/clash.hires.png"
-CLASH_M = "test_images/clash.multi.png"
-CLASH_M2 = "test_images/clash.multi.160.png"
-COLORS_256 = "test_images/colors.256.png"
-PAL_PEPTO = "test_images/colors.pepto.png"
-PAL_TIMANTHES = "test_images/colors.timanthes.png"
-PAL_UNKNOWN = "test_images/colors.unknown.png"
-PAL_VICE = "test_images/colors.vice.png"
-CROP_BOTH = "test_images/crop.251x187.png"
-CROP_H = "test_images/crop.319x200.png"
-CROP_V = "test_images/crop.320x199.png"
-COLORS_1 = "test_images/hires_1c.png"
-COLORS_2 = "test_images/hires_2c.png"
-COLORS_256_U16 = "test_images/hires_256_16p.png"  # 256 defined, uniq 16
-HIRES = "test_images/hires.png"
-MULTI = "test_images/multi.160x200.png"
-MULTI_320 = "test_images/multi.320x200.png"
+def get_image_path(image_name):
+    return os.path.join(os.path.dirname(__file__), "test_images", image_name)
+
+
+CLASH_H = get_image_path("clash.hires.png")
+CLASH_M = get_image_path("clash.multi.png")
+CLASH_M2 = get_image_path("clash.multi.160.png")
+COLORS_256 = get_image_path("colors.256.png")
+PAL_PEPTO = get_image_path("colors.pepto.png")
+PAL_TIMANTHES = get_image_path("colors.timanthes.png")
+PAL_UNKNOWN = get_image_path("colors.unknown.png")
+PAL_VICE = get_image_path("colors.vice.png")
+CROP_BOTH = get_image_path("crop.251x187.png")
+CROP_H = get_image_path("crop.319x200.png")
+CROP_V = get_image_path("crop.320x199.png")
+COLORS_1 = get_image_path("hires_1c.png")
+COLORS_2 = get_image_path("hires_2c.png")
+COLORS_256_U16 = get_image_path("hires_256_16p.png")  # 256 defined, uniq 16
+HIRES = get_image_path("hires.png")
+MULTI = get_image_path("multi.160x200.png")
+MULTI_320 = get_image_path("multi.320x200.png")
 
 
 class LogMock(object):
     """Mock logger class"""
     def warning(*args, **kwargs):
         return
+
     def debug(*args, **kwargs):
         return
 
@@ -75,21 +82,21 @@ class TestChar(TestCase):
         """
         Test Char initialization
         """
-        char = image2c64.Char(self.log)
+        char = base.Char(self.log)
         self.assertEqual(char.clash, False)
         self.assertEqual(char.colors, {})
         self.assertEqual(char.max_colors, 2)
         self.assertEqual(char.pixels, {})
         self.assertEqual(char.prev, None)
 
-        char = image2c64.Char(self.log, "foo")
+        char = base.Char(self.log, "foo")
         self.assertEqual(char.prev, "foo")
 
     def test__analyze_color_map(self):
         """
         Test _analyze_color_map method
         """
-        char = image2c64.Char(self.log, 0)
+        char = base.Char(self.log, 0)
         # simulate clash
         char.max_colors = 1
         char.pixels[(0, 0)] = 1
@@ -100,7 +107,7 @@ class TestChar(TestCase):
         # simulate previous image clash
         char.clash = False
         char.max_colors = 2
-        char.prev = image2c64.Char(self.log, 0)
+        char.prev = base.Char(self.log, 0)
         char.prev.clash = True
         char._analyze_color_map()
         self.assertEqual(char.colors, {})
@@ -110,467 +117,24 @@ class TestChar(TestCase):
         """
         Test get_binary_data method
         """
-        char = image2c64.Char(self.log, 0)
+        char = base.Char(self.log, 0)
         self.assertRaises(NotImplementedError, char.get_binary_data)
 
     def test__check_clash(self):
         """
         Test _check_clash method
         """
-        char = image2c64.Char(self.log, 0)
+        char = base.Char(self.log, 0)
         self.assertEqual(char._check_clash(), False)
 
     def test__compare_colors(self):
         """
         Test _compare_colors method
         """
-        char = image2c64.Char(self.log)
+        char = base.Char(self.log)
         self.assertRaises(TypeError, char._compare_colors)
         self.assertRaises(TypeError, char._compare_colors, None)
         char._compare_colors([])
-
-
-class TestMultiChar(TestCase):
-    """
-    Test multicolor Char class
-    """
-    def setUp(self):
-        """set up"""
-        self.log = LogMock()
-
-    def test___init(self):
-        """
-        Test Char initialization
-        """
-        char = image2c64.MultiChar(self.log, 0)
-        self.assertEqual(char.max_colors, 4)
-        self.assertEqual(char.pixel_state, {(0, 1): False,
-                                      (1, 0): False,
-                                      (1, 1): False})
-
-    def test_get_binary_data(self):
-        """
-        Test get_binary_data method
-        """
-        char = image2c64.MultiChar(self.log, 0)
-        char.pixels = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (0, 3): 3,
-                       (1, 0): 0, (1, 1): 1, (1, 2): 2, (1, 3): 3}
-        char._analyze_color_map()
-        result = char.get_binary_data()
-        self.assertEqual(result['bitmap'], [27, 0b011011])  # 27 for all
-        self.assertEqual(result['screen-ram'], 18)
-        self.assertEqual(result['color-ram'], 3)
-
-        # last pixel with the clash - should fall back to background color
-        char.pixels = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (0, 3): 3,
-                       (1, 0): 0, (1, 1): 1, (1, 2): 2, (1, 3): 3,
-                       (2, 0): 0, (2, 1): 1, (2, 2): 2, (2, 3): 3,
-                       (3, 0): 0, (3, 1): 1, (3, 2): 2, (3, 3): 3,
-                       (4, 0): 0, (4, 1): 1, (4, 2): 2, (4, 3): 3,
-                       (5, 0): 0, (5, 1): 1, (5, 2): 2, (5, 3): 3,
-                       (6, 0): 0, (6, 1): 1, (6, 2): 2, (6, 3): 3,
-                       (7, 0): 0, (7, 1): 1, (7, 2): 2, (7, 3): 9}
-        result = char.get_binary_data()
-        self.assertEqual(result['bitmap'], [27, 27, 27, 27, 27, 27, 27,
-                                            0b011000])
-        self.assertEqual(result['screen-ram'], 18)
-        self.assertEqual(result['color-ram'], 3)
-
-    def test__compare_colors(self):
-        """
-        Test _compare_colors method
-        """
-        iceptor = Interceptor()
-        char = image2c64.MultiChar(self.log, 0)
-        char._compare_colors_with_prev_char = iceptor
-        char._compare_colors(None)
-        self.assertEqual(iceptor.call, 1)
-
-        iceptor.repeat = True
-        char._compare_colors(None)
-        self.assertEqual(iceptor.call, 3)
-
-    def test_analyze_color_map(self):
-        """
-        Test _analyze_color_map method
-        """
-        char = image2c64.MultiChar(self.log, 0)
-        # simulate clash
-        char.max_colors = 1
-        char.pixels[(0, 0)] = 1
-        char.pixels[(0, 1)] = 2
-        char._analyze_color_map()
-        self.assertEqual(char.colors[0], (0, 0))
-
-        # simulate previous image clash
-        char.clash = False
-        char.max_colors = 2
-        char.prev = image2c64.MultiChar(self.log, 0)
-        char.prev.clash = True
-        char._analyze_color_map()
-        self.assertEqual(char.colors[0], (0, 0))
-        self.assertEqual(len(char.colors), 1)
-
-    def test__compare_colors_with_prev_char(self):
-        """
-        Test _compare_colors_with_prev_char method. This method is responsible
-        for creating new mapping for multicolor bit pairs in conjunction with
-        corresponding colors.
-        """
-        char = image2c64.MultiChar(self.log, 0)
-        colors = {0: 16,
-                  1: 4,
-                  2: 5,
-                  3: 7}
-
-        # The default case. No previous picture stored, no colors to compare
-        # with. None colors were stored.
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {(1, 0): False,
-                                      (0, 1): False,
-                                      (1, 1): False})
-        self.assertEqual(char.colors, {})
-
-        # So it needs to rerun, colors are recognized and remembered.
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {1: (0, 1), 2: (1, 0), 3: (1, 1)})
-
-        # 1. Ideal case. Colors for previous and current character in char
-        # boundary are the same. No need to rerun checks.
-        char = image2c64.MultiChar(self.log, 0)
-        prev = image2c64.MultiChar(self.log, 0)
-        prev.colors = {1: (0, 1), 2: (1, 0), 3: (1, 1)}
-        char.prev = prev
-        self.assertFalse(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {1: (0, 1), 2: (1, 0), 3: (1, 1)})
-
-        # 2. Mixed colors/pixel pairs. Color indices are matching fine. Colors
-        # and pairs from previous character should be propagated into current
-        # char.
-        char = image2c64.MultiChar(self.log, 0)
-        prev = image2c64.MultiChar(self.log, 0)
-        prev.colors = {3: (0, 1), 1: (1, 0), 2: (1, 1)}
-        char.prev = prev
-        self.assertFalse(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {3: (0, 1), 1: (1, 0), 2: (1, 1)})
-
-        # 3. Mixed colors/pixel pairs. One color index differ. Colors and
-        # pairs from previous character should be propagated into current
-        # char, the mismatch color should be replaced by current one.
-        char = image2c64.MultiChar(self.log, 0)
-        prev = image2c64.MultiChar(self.log, 0)
-        prev.colors = {3: (0, 1), 4: (1, 0), 2: (1, 1)}
-        char.prev = prev
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {(1, 0): False,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {3: (0, 1), 2: (1, 1)})
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {3: (0, 1), 2: (1, 1), 1: (1, 0)})
-
-        # 4. Mixed colors/pixel pairs. One color index match. Colors and
-        # pairs from previous character should be propagated into current
-        # char, the mismatch colors should be replaced by current ones.
-        char = image2c64.MultiChar(self.log, 0)
-        prev = image2c64.MultiChar(self.log, 6)
-        prev.colors = {4: (0, 1), 3: (1, 0), 5: (1, 1)}
-        char.prev = prev
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): False,
-                                      (1, 1): False})
-        self.assertEqual(char.colors, {3: (1, 0)})
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {3: (1, 0), 1: (0, 1), 2: (1, 1)})
-
-        # 5. Worst case scenario. None of the colors from previous char
-        # matches. Get the current colors.
-        char = image2c64.MultiChar(self.log, 0)
-        prev = image2c64.MultiChar(self.log, 6)
-        prev.colors = {4: (0, 1), 5: (1, 0), 6: (1, 1)}
-        char.prev = prev
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {(1, 0): False,
-                                      (0, 1): False,
-                                      (1, 1): False})
-        self.assertEqual(char.colors, {})
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {(1, 0): True,
-                                      (0, 1): True,
-                                      (1, 1): True})
-        self.assertEqual(char.colors, {1: (0, 1), 2: (1, 0), 3: (1, 1)})
-
-    def test__fix_color_clash(self):
-        """Test for repait color clash"""
-        bg = 0  # black
-        col1 = 1  # white
-        col2 = 2  # red
-        col3 = 3  # magenta
-        clash = 4  # purple
-
-        char = image2c64.MultiChar(self.log, bg, prev=None, fix_clash=True)
-
-        char.pixels = {(0, 0): bg, (0, 1): col1, (0, 2): col2, (0, 3): col3,
-                       (1, 0): bg, (1, 1): col1, (1, 2): col2, (1, 3): col3,
-                       (2, 0): bg, (2, 1): col1, (2, 2): col2, (2, 3): col3,
-                       (3, 0): bg, (3, 1): col1, (3, 2): col2, (3, 3): col3,
-                       (4, 0): bg, (4, 1): col1, (4, 2): col2, (4, 3): col3,
-                       (5, 0): bg, (5, 1): col1, (5, 2): col2, (5, 3): col3,
-                       (6, 0): bg, (6, 1): col1, (6, 2): col2, (6, 3): col3,
-                       (7, 0): bg, (7, 1): col1, (7, 2): col2, (7, 3): clash}
-
-        char._analyze_color_map()
-        self.assertEqual(char.pixels[(7, 3)], col2)
-
-        c1 = 3  # magenta
-        c2 = 4  # purple
-        c3 = 5  # green
-        c4 = 6  # d.blue
-
-        char = image2c64.MultiChar(self.log, bg, prev=None, fix_clash=True)
-        char.pixels = {(0, 0): c1, (0, 1): c2, (0, 2): c3, (0, 3): c4,
-                       (1, 0): c1, (1, 1): c2, (1, 2): c3, (1, 3): c4,
-                       (2, 0): c1, (2, 1): c2, (2, 2): c3, (2, 3): c4,
-                       (3, 0): c1, (3, 1): c2, (3, 2): c3, (3, 3): c4,
-                       (4, 0): c1, (4, 1): c2, (4, 2): c3, (4, 3): c4,
-                       (5, 0): c1, (5, 1): c2, (5, 2): c3, (5, 3): c4,
-                       (6, 0): c1, (6, 1): c2, (6, 2): c3, (6, 3): c4,
-                       (7, 0): c1, (7, 1): c2, (7, 2): c3, (7, 3): c4}
-
-        char._analyze_color_map()
-        for idx in range(8):
-            self.assertEqual(char.pixels[(idx, 0)], c1)
-            self.assertEqual(char.pixels[(idx, 1)], c2)
-            self.assertEqual(char.pixels[(idx, 2)], c3)
-            self.assertEqual(char.pixels[(idx, 3)], bg)
-
-        c1 = 1  # white - clash
-        c2 = 2  # red
-        c3 = 5  # green
-        c4 = 3  # magenta
-
-        char = image2c64.MultiChar(self.log, bg, prev=None, fix_clash=True)
-        char.pixels = {(0, 0): c1, (0, 1): c2, (0, 2): c3, (0, 3): c4,
-                       (1, 0): c1, (1, 1): c2, (1, 2): c3, (1, 3): c4,
-                       (2, 0): c1, (2, 1): c2, (2, 2): c3, (2, 3): c4,
-                       (3, 0): bg, (3, 1): c2, (3, 2): c3, (3, 3): c4,
-                       (4, 0): bg, (4, 1): c2, (4, 2): c3, (4, 3): c4,
-                       (5, 0): bg, (5, 1): c2, (5, 2): c3, (5, 3): c4,
-                       (6, 0): bg, (6, 1): c2, (6, 2): c3, (6, 3): c4,
-                       (7, 0): bg, (7, 1): c2, (7, 2): c3, (7, 3): c4}
-
-        char._analyze_color_map()
-        for idx in range(8):
-            self.assertEqual(char.pixels[(idx, 0)], bg)
-            self.assertEqual(char.pixels[(idx, 1)], c2)
-            self.assertEqual(char.pixels[(idx, 2)], c3)
-            self.assertEqual(char.pixels[(idx, 3)], c4)
-
-
-class TestHiresChar(TestCase):
-    """
-    Test hires Char class
-    """
-    def setUp(self):
-        """set up"""
-        self.log = LogMock()
-
-    def test_get_binary_data(self):
-        """
-        Test get_binary_data method
-        """
-        char = image2c64.HiresChar(self.log)
-        char.pixels = {(0, 0): 1, (0, 1): 0, (0, 2): 1, (0, 3): 0,
-                       (0, 4): 0, (0, 5): 1, (0, 6): 0, (0, 7): 1}
-        char._analyze_color_map()
-        result = char.get_binary_data()
-        self.assertEqual(result['bitmap'], [0b10100101])
-        self.assertEqual(result['screen-ram'], 0x10)
-
-        # last pixel with the clash - should fall back to background color
-        char.pixels = {(0, 0): 1, (0, 1): 0, (0, 2): 1, (0, 3): 0,
-                       (0, 4): 0, (0, 5): 1, (0, 6): 0, (0, 7): 1,
-                       (1, 0): 1, (1, 1): 0, (1, 2): 1, (1, 3): 0,
-                       (1, 4): 0, (1, 5): 1, (1, 6): 0, (1, 7): 1,
-                       (2, 0): 1, (2, 1): 0, (2, 2): 1, (2, 3): 0,
-                       (2, 4): 0, (2, 5): 1, (2, 6): 0, (2, 7): 1,
-                       (3, 0): 1, (3, 1): 0, (3, 2): 1, (3, 3): 0,
-                       (3, 4): 0, (3, 5): 1, (3, 6): 0, (3, 7): 1,
-                       (4, 0): 1, (4, 1): 0, (4, 2): 1, (4, 3): 0,
-                       (4, 4): 0, (4, 5): 1, (4, 6): 0, (4, 7): 1,
-                       (5, 0): 1, (5, 1): 0, (5, 2): 1, (5, 3): 0,
-                       (5, 4): 0, (5, 5): 1, (5, 6): 0, (5, 7): 1,
-                       (6, 0): 1, (6, 1): 0, (6, 2): 1, (6, 3): 0,
-                       (6, 4): 0, (6, 5): 1, (6, 6): 0, (6, 7): 1,
-                       (7, 0): 1, (7, 1): 0, (7, 2): 1, (7, 3): 0,
-                       (7, 4): 0, (7, 5): 1, (7, 6): 0, (7, 7): 2}
-        char._fix_clash = True
-        char._analyze_color_map()
-        result = char.get_binary_data()
-        self.assertEqual(result['bitmap'], [165, 165, 165, 165, 165, 165, 165,
-                                            0b10100100])
-        self.assertEqual(result['screen-ram'], 0x10)
-
-    def test__compare_colors_with_prev_char(self):
-        """
-        Test _compare_colors_with_prev_char method. This method is responsible
-        for creating new mapping for multicolor bit pairs in conjunction with
-        corresponding colors.
-        """
-        char = image2c64.HiresChar(self.log)
-        colors = {8: 50, 9: 14}
-
-        # The default case. No previous picture stored, no colors to compare
-        # with. None colors were stored.
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {0: False, 1: False})
-        self.assertEqual(char.colors, {})
-
-        # So it needs to rerun, colors are recognized and remembered.
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {0: True, 1: True})
-        self.assertEqual(char.colors, {8: 0, 9: 1})
-
-        # 1. Ideal case. Colors for previous and current character in char
-        # boundary are the same. No need to rerun checks.
-        char = image2c64.HiresChar(self.log)
-        prev = image2c64.HiresChar(self.log)
-        prev.colors = {8: 0, 9: 1}
-        char.prev = prev
-        self.assertFalse(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {0: True, 1: True})
-        self.assertEqual(char.colors, {8: 0, 9: 1})
-
-        # 2. Mixed colors/pixel pairs. Color indices are matching fine. Colors
-        # and pairs from previous character should be propagated into current
-        # char.
-        char = image2c64.HiresChar(self.log)
-        prev = image2c64.HiresChar(self.log)
-        prev.colors = {9: 1, 8: 0}
-        char.prev = prev
-        self.assertFalse(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {0: True, 1: True})
-        self.assertEqual(char.colors, {9: 1, 8: 0})
-
-        # 3. Mixed colors/pixel pairs. One color index differ. Tho other color
-        # from previous character should be propagated into current char,
-        # the mismatch color should be replaced by current one.
-        char = image2c64.HiresChar(self.log)
-        prev = image2c64.HiresChar(self.log)
-        prev.colors = {5: 1, 9: 0}
-        char.prev = prev
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {0: True, 1: False})
-        self.assertEqual(char.colors, {9: 0})
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {0: True, 1: True})
-        self.assertEqual(char.colors, {9: 0, 8: 1})
-
-        # 5. Worst case scenario. None of the colors from previous char
-        # matches. Get the current colors.
-        char = image2c64.HiresChar(self.log)
-        prev = image2c64.HiresChar(self.log)
-        prev.colors = {5: 1, 6: 0}
-        char.prev = prev
-        self.assertTrue(char._compare_colors_with_prev_char(colors))
-        self.assertEqual(char.pixel_state, {0: False, 1: False})
-        self.assertEqual(char.colors, {})
-        self.assertFalse(char._compare_colors_with_prev_char(colors, True))
-        self.assertEqual(char.pixel_state, {0: True, 1: True})
-        self.assertEqual(char.colors, {9: 1, 8: 0})
-
-    def test__fix_color_clash(self):
-        """Test for repait color clash"""
-        char = image2c64.HiresChar(self.log, prev=None, fix_clash=True)
-        char.pixels = {(0, 0): 2, (0, 1): 1, (0, 2): 1, (0, 3): 7,
-                       (0, 4): 2, (0, 5): 2, (0, 6): 3, (0, 7): 4}
-        char._analyze_color_map()
-        self.assertEqual(char.pixels,
-                         {(0, 0): 2, (0, 1): 1, (0, 2): 1, (0, 3): 1,
-                          (0, 4): 2, (0, 5): 2,(0, 6): 2, (0, 7): 2})
-
-
-class TestLogger(TestCase):
-    """
-    Test Logger class
-    """
-    def test___init(self):
-        """
-        Test logger object creation
-        """
-        log = image2c64.Logger("foo")
-        self.assertTrue(isinstance(log, image2c64.Logger))
-        # since logger.Logging is mocked here we will have DummyLogger
-        # instance
-        self.assertTrue(isinstance(log(), logging.Logger))  # DummyLogger))
-        self.assertEqual(log().handlers[0].name, 'console')
-
-    def test__setup_logger(self):
-        """
-        Test setup logger method
-        """
-        log = image2c64.Logger("foo")
-        self.assertEqual(len(log().handlers), 1)
-        log.setup_logger()
-        self.assertEqual(len(log().handlers), 1)
-        self.assertEqual(log().handlers[0].name, 'console')
-        self.assertEqual(log().getEffectiveLevel(), logging.WARNING)
-
-    def test_set_verbose(self):
-        """
-        Test for changing verbosity level
-        """
-        log = image2c64.Logger("foo")()
-
-        # Default levels are set to 0, which means only warnings are visible
-        log.set_verbose(0, 0)
-        self.assertEqual(log.getEffectiveLevel(), logging.WARNING)
-
-        # more verbose
-        log.set_verbose(1, 0)
-        self.assertEqual(log.getEffectiveLevel(), logging.INFO)
-
-        # even more verbose
-        log.set_verbose(2, 0)
-        self.assertEqual(log.getEffectiveLevel(), logging.DEBUG)
-
-        # further verbosity doesn't make sense
-        log.set_verbose(5, 0)
-        self.assertEqual(log.getEffectiveLevel(), logging.DEBUG)
-
-        # less verbose
-        log.set_verbose(0, 1)
-        self.assertEqual(log.getEffectiveLevel(), logging.ERROR)
-
-        # even less verbose
-        log.set_verbose(0, 2)
-        self.assertEqual(log.getEffectiveLevel(), logging.CRITICAL)
-
-        # smaller verbosity doesn't make sense
-        log.set_verbose(0, 5)
-        self.assertEqual(log.getEffectiveLevel(), logging.CRITICAL)
-
-        # even though both values cannot be set at the same time (argparse
-        # module is taking care about that), verbosity takes precedence over
-        # quietness.
-        log.set_verbose(5, 5)
-        self.assertEqual(log.getEffectiveLevel(), logging.DEBUG)
 
 
 class TestFullScreenImage(TestCase):
@@ -581,8 +145,10 @@ class TestFullScreenImage(TestCase):
         """setup"""
         self._system = os.system
         self.os_system_params = ""
+
         def _system(param):
             self.os_system_params = param
+
         os.system = _system
 
     def tearDown(self):
@@ -593,8 +159,8 @@ class TestFullScreenImage(TestCase):
         """
         Test initialization
         """
-        self.assertRaises(TypeError, image2c64.FullScreenImage)
-        obj = image2c64.FullScreenImage(MULTI_320)
+        self.assertRaises(TypeError, base.FullScreenImage)
+        obj = base.FullScreenImage(MULTI_320)
         self.assertEqual(obj._fname, MULTI_320)
         self.assertEqual(obj._errors_action, "none")
         self.assertEqual(obj._src_image, None)
@@ -607,14 +173,14 @@ class TestFullScreenImage(TestCase):
         """
         for fname in (CROP_V, CROP_H, CROP_BOTH, CLASH_M2, MULTI, PAL_PEPTO,
                       PAL_TIMANTHES, PAL_UNKNOWN, PAL_VICE):
-            obj = image2c64.FullScreenImage(fname)
+            obj = base.FullScreenImage(fname)
             obj.log.error = lambda *x: None  # suppress log
             obj._load()
             self.assertFalse(obj._check_dimensions())
 
         for fname in (CLASH_H, CLASH_M, COLORS_256, COLORS_1, COLORS_2,
                       COLORS_256_U16, HIRES, MULTI_320):
-            obj = image2c64.FullScreenImage(fname)
+            obj = base.FullScreenImage(fname)
             obj._load()
             self.assertTrue(obj._check_dimensions())
 
@@ -622,29 +188,34 @@ class TestFullScreenImage(TestCase):
         """
         Test of loading images
         """
-        self.assertTrue(image2c64.FullScreenImage(HIRES)._load())
-        obj = image2c64.FullScreenImage("nofile")
+        self.assertTrue(base.FullScreenImage(HIRES)._load())
+        obj = base.FullScreenImage("nofile")
         obj.log.critical = lambda x: None  # suppress log
         self.assertFalse(obj._load())
+
+        obj = base.FullScreenImage("/none/existing")
+        self.assertFalse(obj._load())
+        obj.log.setLevel(logging.DEBUG)
+        self.assertRaises(IOError, obj._load)
 
     def test__colors_check(self):
         """
         Test _colors_check method
         """
-        obj = image2c64.FullScreenImage(COLORS_256)
+        obj = base.FullScreenImage(COLORS_256)
         obj._load()
         histogram = obj._src_image.histogram()
         # even if input image have 256 colors, internally it will be converted
         # to 16 colors.
         self.assertEqual(obj._colors_check(histogram), 16)
 
-        obj = image2c64.FullScreenImage(COLORS_1)
+        obj = base.FullScreenImage(COLORS_1)
         obj.log.warn = lambda x, y: None  # suppress log
         obj._load()
         histogram = obj._src_image.histogram()
         self.assertEqual(obj._colors_check(histogram), 1)
 
-        obj = image2c64.FullScreenImage(COLORS_2)
+        obj = base.FullScreenImage(COLORS_2)
         obj._load()
         histogram = obj._src_image.histogram()
         self.assertEqual(obj._colors_check(histogram), 2)
@@ -653,26 +224,26 @@ class TestFullScreenImage(TestCase):
         """
         Test _convert process
         """
-        obj = image2c64.FullScreenImage("nofile")
+        obj = base.FullScreenImage("nofile")
         obj.log.critical = lambda x: None  # suppress log
         self.assertFalse(obj._convert())
 
-        obj = image2c64.FullScreenImage(COLORS_256)
+        obj = base.FullScreenImage(COLORS_256)
         self.assertRaises(NotImplementedError, obj._convert)
 
-        obj = image2c64.FullScreenImage(CROP_BOTH)
+        obj = base.FullScreenImage(CROP_BOTH)
         self.assertFalse(obj._convert())
 
     def test__get_best_palette_map(self):
         """
         Test for method _find_best_palette_map
         """
-        obj = image2c64.FullScreenImage(COLORS_1)
+        obj = base.FullScreenImage(COLORS_1)
         obj._load()
         obj._find_best_palette_map()
         self.assertEqual(obj._palette_map, {(0, 0, 0): 0})
 
-        obj = image2c64.FullScreenImage(COLORS_2)
+        obj = base.FullScreenImage(COLORS_2)
         obj._load()
         obj._find_best_palette_map()
         histogram = obj._src_image.histogram()
@@ -684,7 +255,7 @@ class TestFullScreenImage(TestCase):
         """
         Test for method _find_most_freq_color
         """
-        obj = image2c64.FullScreenImage(COLORS_2)
+        obj = base.FullScreenImage(COLORS_2)
         self.assertEqual(obj.data.get('most_freq_color'), None)
 
         obj._load()
@@ -694,7 +265,7 @@ class TestFullScreenImage(TestCase):
 
         self.assertEqual(obj.data['most_freq_color'], 11)
 
-        obj = image2c64.FullScreenImage(COLORS_1)
+        obj = base.FullScreenImage(COLORS_1)
         self.assertEqual(obj.data.get('most_freq_color'), None)
 
         obj._load()
@@ -708,7 +279,7 @@ class TestFullScreenImage(TestCase):
         """
         Test _get_palette method
         """
-        obj = image2c64.FullScreenImage(PAL_PEPTO)
+        obj = base.FullScreenImage(PAL_PEPTO)
         obj._load()
 
         ref_palette = set(((0, 0, 0), (53, 40, 121), (67, 57, 0),
@@ -725,7 +296,7 @@ class TestFullScreenImage(TestCase):
         """
         Test _discover_best_palette method
         """
-        obj = image2c64.FullScreenImage(PAL_PEPTO)
+        obj = base.FullScreenImage(PAL_PEPTO)
         obj._load()
         obj._find_best_palette_map()
         self.assertEqual(obj._palette_map,
@@ -738,7 +309,7 @@ class TestFullScreenImage(TestCase):
                           (111, 61, 134): 4, (255, 255, 255): 1,
                           (104, 55, 43): 2, (149, 149, 149): 15})
 
-        obj = image2c64.FullScreenImage(PAL_VICE)
+        obj = base.FullScreenImage(PAL_VICE)
         obj._load()
         obj._find_best_palette_map()
         self.assertEqual(obj._palette_map,
@@ -751,7 +322,7 @@ class TestFullScreenImage(TestCase):
                           (213, 223, 124): 7, (255, 255, 255): 1,
                           (109, 52, 0): 9, (207, 0, 0): 2})
 
-        obj = image2c64.FullScreenImage(PAL_TIMANTHES)
+        obj = base.FullScreenImage(PAL_TIMANTHES)
         obj._load()
         obj._find_best_palette_map()
         self.assertEqual(obj._palette_map,
@@ -765,7 +336,7 @@ class TestFullScreenImage(TestCase):
                           (107, 107, 107): 12, (119, 79, 30): 8,
                           (213, 213, 213): 1, (46, 35, 125): 6})
 
-        obj = image2c64.FullScreenImage(PAL_UNKNOWN)
+        obj = base.FullScreenImage(PAL_UNKNOWN)
         obj._load()
         obj._find_best_palette_map()
         self.assertEqual(obj._palette_map,
@@ -782,7 +353,7 @@ class TestFullScreenImage(TestCase):
         """
         Test _fill_memory method
         """
-        obj = image2c64.FullScreenImage(HIRES)
+        obj = base.FullScreenImage(HIRES)
         obj._load()
         self.assertRaises(NotImplementedError, obj._fill_memory)
 
@@ -790,7 +361,7 @@ class TestFullScreenImage(TestCase):
         """
         Test save method
         """
-        obj = image2c64.FullScreenImage(HIRES)
+        obj = base.FullScreenImage(HIRES)
         obj._load()
         self.assertRaises(NotImplementedError, obj.save, "fn")
 
@@ -798,7 +369,7 @@ class TestFullScreenImage(TestCase):
         """
         Test settting background/border colors
         """
-        obj = image2c64.FullScreenImage(HIRES)
+        obj = base.FullScreenImage(HIRES)
         self.assertEqual(obj.data, {})
 
         obj.set_border_color(12)
@@ -817,7 +388,7 @@ class TestFullScreenImage(TestCase):
         """
         Test for _get_border method
         """
-        obj = image2c64.FullScreenImage(HIRES)
+        obj = base.FullScreenImage(HIRES)
         self.assertEqual(obj._get_border(), 0)
 
         obj._load()
@@ -826,11 +397,11 @@ class TestFullScreenImage(TestCase):
         obj._find_most_freq_color(histogram)
         self.assertEqual(obj._get_border(), 0)
 
-        obj = image2c64.FullScreenImage(COLORS_256)
+        obj = base.FullScreenImage(COLORS_256)
         obj.set_border_color(12)
         self.assertEqual(obj._get_border(), 12)
 
-        obj = image2c64.FullScreenImage(COLORS_256)
+        obj = base.FullScreenImage(COLORS_256)
         self.assertEqual(obj._get_border(), 0)
 
         obj._load()
@@ -845,7 +416,7 @@ class TestFullScreenImage(TestCase):
         """
         Test set_bg_color method
         """
-        obj = image2c64.FullScreenImage(HIRES)
+        obj = base.FullScreenImage(HIRES)
         self.assertEqual(obj.data.get('background'), None)
         obj.set_bg_color(15)
         self.assertEqual(obj.data.get('background'), 15)
@@ -854,7 +425,7 @@ class TestFullScreenImage(TestCase):
         """
         Test set_border_color method
         """
-        obj = image2c64.FullScreenImage(HIRES)
+        obj = base.FullScreenImage(HIRES)
         self.assertEqual(obj.data.get('border'), None)
         obj.set_border_color(14)
         self.assertEqual(obj.data.get('border'), 14)
@@ -864,13 +435,13 @@ class TestFullScreenImage(TestCase):
         Test for _error_image_action method
         """
         error_img = os.path.join(os.path.dirname(__file__),
-                                 image2c64.get_modified_fname(MULTI, 'png',
-                                                              '_error.'))
+                                 base.get_modified_fname(MULTI, 'png',
+                                                         '_error.'))
 
         if os.path.exists(error_img):
             os.unlink(error_img)
 
-        obj = image2c64.MultiConverter(MULTI)
+        obj = base.FullScreenImage(MULTI)
         obj._load()
         result = obj._error_image_action([(0, 0)], True)
         self.assertEqual(result, None)
@@ -885,19 +456,19 @@ class TestFullScreenImage(TestCase):
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)], True)
 
-        obj = image2c64.MultiConverter(MULTI)
+        obj = base.FullScreenImage(MULTI)
         obj._load()
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)], True)
 
         error_img = os.path.join(os.path.dirname(__file__),
-                                 image2c64.get_modified_fname(MULTI_320, 'png',
-                                                              '_error.'))
+                                 base.get_modified_fname(MULTI_320, 'png',
+                                                         '_error.'))
 
         if os.path.exists(error_img):
             os.unlink(error_img)
 
-        obj = image2c64.MultiConverter(MULTI_320)
+        obj = base.FullScreenImage(MULTI_320)
         obj._load()
         result = obj._error_image_action([(0, 0)])
         self.assertEqual(result, None)
@@ -912,19 +483,19 @@ class TestFullScreenImage(TestCase):
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
 
-        obj = image2c64.MultiConverter(MULTI_320)
+        obj = base.FullScreenImage(MULTI_320)
         obj._load()
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
 
         error_img = os.path.join(os.path.dirname(__file__),
-                                 image2c64.get_modified_fname(HIRES, 'png',
-                                                              '_error.'))
+                                 base.get_modified_fname(HIRES, 'png',
+                                                         '_error.'))
 
         if os.path.exists(error_img):
             os.unlink(error_img)
 
-        obj = image2c64.HiresConverter(HIRES)
+        obj = base.FullScreenImage(HIRES)
         obj._load()
         result = obj._error_image_action([(0, 0)])
         self.assertEqual(result, None)
@@ -939,16 +510,16 @@ class TestFullScreenImage(TestCase):
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
 
-        obj = image2c64.HiresConverter(MULTI)
+        obj = base.FullScreenImage(MULTI)
         obj._load()
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
 
         # Test the grafx2 option
         error_img = os.path.join(os.path.dirname(__file__),
-                                 image2c64.get_modified_fname(MULTI_320, 'png',
-                                                              '_error.'))
-        obj = image2c64.MultiConverter(MULTI_320)
+                                 base.get_modified_fname(MULTI_320, 'png',
+                                                         '_error.'))
+        obj = base.FullScreenImage(MULTI_320)
         obj._load()
         obj._errors_action = "grafx2"
         obj._error_image_action([(0, 0)])
@@ -956,423 +527,45 @@ class TestFullScreenImage(TestCase):
         os.unlink(error_img)
 
 
-class TestHires(TestCase):
-    """
-    Tests for hires conversion
-    """
-
-    def test__check_dimensions(self):
-        """
-        Test of dimensions of the input images
-        """
-        for fname in (CROP_V, CROP_H, CROP_BOTH, CLASH_M2, MULTI, PAL_PEPTO,
-                      PAL_TIMANTHES, PAL_UNKNOWN, PAL_VICE):
-            obj = image2c64.HiresConverter(fname)
-            obj.log.error = lambda *x: None  # suppress log
-            obj._load()
-            self.assertFalse(obj._check_dimensions())
-
-        for fname in (CLASH_H, CLASH_M, COLORS_256, COLORS_1, COLORS_2,
-                      COLORS_256_U16, HIRES, MULTI_320):
-            obj = image2c64.HiresConverter(fname)
-            obj._load()
-            self.assertTrue(obj._check_dimensions())
-
-    def test__fill_memory(self):
-        """
-        Test for _fill_memory method
-        """
-        obj = image2c64.HiresConverter(HIRES)
-        obj._load()
-        hist = obj._src_image.histogram()
-        obj._colors_check(hist)
-        obj._find_best_palette_map()
-        obj._find_most_freq_color(hist)
-        self.assertEqual(obj._fill_memory(), True)
-
-        obj = image2c64.HiresConverter(COLORS_1)
-        obj._load()
-        hist = obj._src_image.histogram()
-        obj.log.warn = lambda x, y: None  # suppress log
-        obj._colors_check(hist)
-        obj._find_best_palette_map()
-        obj._find_most_freq_color(hist)
-        self.assertEqual(obj._fill_memory(), True)
-
-        obj = image2c64.HiresConverter(CLASH_H)
-        obj._load()
-        hist = obj._src_image.histogram()
-        obj._colors_check(hist)
-        obj._find_best_palette_map()
-        obj._find_most_freq_color(hist)
-        self.assertEqual(obj._fill_memory(), False)
-
-    def test__get_displayer(self):
-        """
-        Test for _get_displayer method
-        """
-        obj = image2c64.HiresConverter(HIRES)
-        border = chr(0)
-        displayer = ["\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x34\x00"
-                     "\x00\x00\x00\x00\x00\x78\xa9", border, "\x8d\x20\xd0\xa9"
-                     "\x00\x8d\x21\xd0\xa9\xbb\x8d\x11\xd0\xa9\x3c\x8d"
-                     "\x18\xd0\x4c\x25\x08"]
-        self.assertEqual(obj._get_displayer(), "".join(displayer))
-        border = chr(10)
-        displayer[1] = border
-        obj.set_border_color(10)
-        self.assertEqual(obj._get_displayer(), "".join(displayer))
-
-    def test_save(self):
-        """
-        Test for save method (and all _save... submethods)
-        """
-        fdesc, fname = mkstemp(suffix=".prg")
-        os.close(fdesc)
-
-        obj = image2c64.HiresConverter(HIRES)
-        obj.log.warning = lambda *x: None  # suppress log
-        self.assertEqual(obj.save(fname, "prg"), True)
-
-        self.assertTrue(os.path.exists(fname))
-        self.assertEqual(os.stat(fname).st_size, 14145)
-        os.unlink(fname)
-
-        fdesc, fname = mkstemp(suffix=".prg")
-        os.close(fdesc)
-
-        obj = image2c64.HiresConverter(HIRES)
-        obj.log.warning = lambda *x: None  # suppress log
-        self.assertEqual(obj.save(fname, "art-studio-hires"), True)
-
-        self.assertTrue(os.path.exists(fname))
-        self.assertEqual(os.stat(fname).st_size, 9009)
-        os.unlink(fname)
-
-        obj = image2c64.HiresConverter(CLASH_H)
-        self.assertEqual(obj.save(fname, "art-studio-hires"), False)
-
-        obj = image2c64.HiresConverter(HIRES)
-        self.assertEqual(obj.save(fname, "raw"), True)
-
-        self.assertTrue(os.path.exists(fname + "_bitmap.raw"))
-        self.assertTrue(os.path.exists(fname + "_screen.raw"))
-
-        self.assertEqual(os.stat(fname + "_bitmap.raw").st_size, 8000)
-        self.assertEqual(os.stat(fname + "_screen.raw").st_size, 1000)
-        os.unlink(fname + "_bitmap.raw")
-        os.unlink(fname + "_screen.raw")
-
-
-class TestMulticolor(TestCase):
-    """
-    Tests for multicolor conversion
-    """
-    def test__check_dimensions(self):
-        """
-        Test of dimensions of the input images
-        """
-        for fname in (CROP_V, CROP_H, CROP_BOTH):
-            obj = image2c64.MultiConverter(fname)
-            obj.log.error = lambda *x: None  # suppress log
-            obj._load()
-            self.assertFalse(obj._check_dimensions())
-
-        for fname in (CLASH_H, CLASH_M, COLORS_256, COLORS_1, COLORS_2,
-                      COLORS_256_U16, HIRES, MULTI_320, CLASH_M2, MULTI,
-                      PAL_PEPTO, PAL_TIMANTHES, PAL_UNKNOWN, PAL_VICE):
-            obj = image2c64.MultiConverter(fname)
-            obj._load()
-            self.assertTrue(obj._check_dimensions(), fname)
-
-    def test__load(self):
-        """
-        Test custom load function
-        """
-        obj = image2c64.MultiConverter(MULTI)
-        self.assertEqual(obj._load(), True)
-        self.assertEqual(obj._src_image.size[0], 160)
-
-        obj = image2c64.MultiConverter(MULTI_320)
-        self.assertEqual(obj._load(), True)
-        self.assertEqual(obj._src_image.size[0], 160)
-
-        obj = image2c64.MultiConverter("nofile")
-        obj.log.critical = lambda x: None  # suppress log
-        self.assertEqual(obj._load(), False)
-        self.assertEqual(obj._src_image, None)
-
-    def test_save(self):
-        """
-        Test for save methods
-        """
-        fdesc, fname = mkstemp(suffix=".prg")
-        os.close(fdesc)
-        os.unlink(fname)
-
-        obj = image2c64.MultiConverter(MULTI_320)
-        self.assertEqual(obj.save(fname, "prg"), True)
-
-        self.assertTrue(os.path.exists(fname))
-        self.assertEqual(os.stat(fname).st_size, 14145)
-        os.unlink(fname)
-
-        fdesc, fname = mkstemp(suffix=".prg")
-        os.close(fdesc)
-        os.unlink(fname)
-
-        obj = image2c64.MultiConverter(MULTI)
-        self.assertEqual(obj.save(fname, "koala"), True)
-
-        self.assertTrue(os.path.exists(fname))
-        self.assertEqual(os.stat(fname).st_size, 10004)
-        os.unlink(fname)
-
-        obj = image2c64.MultiConverter(CLASH_M)
-        self.assertEqual(obj.save(fname, "koala"), False)
-
-        obj = image2c64.MultiConverter(CLASH_M2)
-        self.assertEqual(obj.save(fname, "koala"), False)
-
-        obj = image2c64.MultiConverter(MULTI)
-        self.assertEqual(obj.save(fname, "raw"), True)
-
-        self.assertTrue(os.path.exists(fname + "_bg.raw"))
-        self.assertTrue(os.path.exists(fname + "_bitmap.raw"))
-        self.assertTrue(os.path.exists(fname + "_color-ram.raw"))
-        self.assertTrue(os.path.exists(fname + "_screen.raw"))
-
-        self.assertEqual(os.stat(fname + "_bg.raw").st_size, 1)
-        self.assertEqual(os.stat(fname + "_bitmap.raw").st_size, 8000)
-        self.assertEqual(os.stat(fname + "_color-ram.raw").st_size, 1000)
-        self.assertEqual(os.stat(fname + "_screen.raw").st_size, 1000)
-        os.unlink(fname + "_bg.raw")
-        os.unlink(fname + "_bitmap.raw")
-        os.unlink(fname + "_color-ram.raw")
-        os.unlink(fname + "_screen.raw")
-
-        obj = image2c64.MultiConverter(CLASH_M)
-        self.assertEqual(obj.save(fname, "raw"), False)
-
-        obj = image2c64.MultiConverter(CLASH_M2)
-        self.assertEqual(obj.save(fname, "raw"), False)
-
-
 class TestMisc(TestCase):
     """
     Test helper functions
     """
 
-    def test_get_modified_fname(self):
-        """
-        Test get_modified_fname function.
-        """
-        self.assertEqual(image2c64.get_modified_fname(HIRES, "png", "_foo"),
-                         "test_images/hires_foo.png")
-        self.assertEqual(image2c64.get_modified_fname(HIRES, ".png", "_foo"),
-                         "test_images/hires_foo.png")
-        self.assertEqual(image2c64.get_modified_fname(HIRES, "png", "_foo."),
-                         "test_images/hires_foo.png")
-
     def test_best_color_match(self):
         """
-        Test best_color_match helper function.
+        Test _best_color_match helper function.
         """
         # perfect match
-        idx, delta = image2c64.best_color_match((0, 0, 0),
-                                                image2c64.PALETTES['Pepto'])
+        idx, delta = base._best_color_match((0, 0, 0),
+                                            base.PALETTES['Pepto'])
         self.assertEqual(idx, 0)
         self.assertEqual(delta, 0)
 
         # almost there
-        idx, delta = image2c64.best_color_match((2, 0, 0),
-                                                image2c64.PALETTES['Pepto'])
+        idx, delta = base._best_color_match((2, 0, 0),
+                                            base.PALETTES['Pepto'])
         self.assertEqual(idx, 0)
         self.assertEqual(delta, 4)
 
-        idx, delta = image2c64.best_color_match((254, 254, 254),
-                                                image2c64.PALETTES['Pepto'])
+        idx, delta = base._best_color_match((254, 254, 254),
+                                            base.PALETTES['Pepto'])
         self.assertEqual(idx, 1)
         self.assertEqual(delta, 3)
 
         # quite distorted: after all we got gray - which have values
         # 68, 68, 68
-        idx, delta = image2c64.best_color_match((86, 86, 86),
-                                                image2c64.PALETTES['Pepto'])
+        idx, delta = base._best_color_match((86, 86, 86),
+                                            base.PALETTES['Pepto'])
         self.assertEqual(idx, 11)
         self.assertEqual(delta, 972)
 
         # one value lower and now we got dark gray - which have values
         # 68, 68, 68
-        idx, delta = image2c64.best_color_match((85, 85, 85),
-                                                image2c64.PALETTES['Pepto'])
+        idx, delta = base._best_color_match((85, 85, 85),
+                                            base.PALETTES['Pepto'])
         self.assertEqual(idx, 11)
         self.assertEqual(delta, 867)
-
-    def test_resolve_name(self):
-        """
-        Test resolve_name function
-        """
-        class Obj(object):
-            """
-            Mock args class
-            """
-            def __init__(self):
-                """
-                Initialization
-                """
-                self.filename = "foo"
-                self.format = "hires"
-                self.output = None
-                self.executable = False
-                self.raw = False
-
-        args = Obj()
-        args.filename = ["foo"]
-        args.format = "hires"
-        args.output = None
-        args.executable = False
-        self.assertEqual(image2c64.resolve_name(args, args.filename[0]),
-                         ("foo.prg", "hires"))
-
-        args.output = "bar"
-        self.assertEqual(image2c64.resolve_name(args, args.filename[0]),
-                         ("bar", "hires"))
-
-        args.executable = True
-        self.assertEqual(image2c64.resolve_name(args, args.filename[0]),
-                         ("bar.prg", "prg"))
-
-        args.executable = False
-        args.raw = True
-        args.output = "bar.prg"
-        self.assertEqual(image2c64.resolve_name(args, args.filename[0]),
-                         ("bar", "raw"))
-
-        args.output = "foo.hires"
-        self.assertEqual(image2c64.resolve_name(args, args.filename[0]),
-                         ("foo", "raw"))
-
-        args.output = "foo.hires.png"
-        self.assertEqual(image2c64.resolve_name(args, args.filename[0]),
-                         ("foo.hires", "raw"))
-
-    def test_convert(self):
-        """
-        Test convert function
-        """
-
-        class Mock(object):
-            def __init__(self):
-                self.filename = []
-                self.errors = ['show', 'save', 'none'][2]
-                self.border = None
-                self.background = None
-                self.verbose = 0
-                self.quiet = 0
-                self.output = None
-                self.format = None
-                self.executable = False
-                self.raw = False
-
-        def mock_set_verbose(verbose, quiet):
-            ConvClass.V = verbose
-            ConvClass.Q = quiet
-
-        class ConvClass(image2c64.FullScreenImage):
-            BG = None
-            BORDER = None
-            LOG = None
-            V = 0
-            Q = 0
-            ERRORS = "none"
-            SELF = []
-
-            def __init__(self, fname, errors_action="none"):
-                super(ConvClass, self).__init__(fname, errors_action)
-                ConvClass.ERRORS = errors_action
-                self.log = Mock()
-                self.log.set_verbose = mock_set_verbose
-                ConvClass.SELF.append(self)
-
-            def save(self, fname, format_):
-                return
-
-            def set_border_color(self, color):
-                ConvClass.BORDER = color
-
-            def set_bg_color(self, color):
-                ConvClass.BG = color
-
-        arg_mock = Mock()
-        image2c64.convert(arg_mock, ConvClass)
-        self.assertEqual(ConvClass.BG, None)
-        self.assertEqual(ConvClass.BORDER, None)
-        self.assertEqual(ConvClass.V, 0)
-        self.assertEqual(ConvClass.Q, 0)
-        self.assertEqual(ConvClass.ERRORS, 'none')
-        self.assertEqual(len(ConvClass.SELF), 0)
-
-        arg_mock = Mock()
-        arg_mock.filename = ["foo", "bar"]
-        arg_mock.errors = "show"
-        image2c64.convert(arg_mock, ConvClass)
-        self.assertEqual(ConvClass.ERRORS, 'show')
-        self.assertEqual(len(ConvClass.SELF), 2)
-        self.assertEqual(ConvClass.SELF[0].prev_chars, {})
-        self.assertEqual(ConvClass.SELF[1].prev_chars, ConvClass.SELF[0].chars)
-
-        arg_mock = Mock()
-        arg_mock.filename = ["foo", "bar", "baz"]
-        arg_mock.border = 2  # red
-        arg_mock.background = 8
-        image2c64.convert(arg_mock, ConvClass)
-        self.assertEqual(ConvClass.BORDER, 2)
-        self.assertEqual(ConvClass.BG, 8)
-        self.assertEqual(len(ConvClass.SELF), 5)
-        self.assertEqual(ConvClass.SELF[2].prev_chars, {})
-        self.assertEqual(ConvClass.SELF[3].prev_chars, ConvClass.SELF[2].chars)
-        self.assertEqual(ConvClass.SELF[4].prev_chars, ConvClass.SELF[3].chars)
-
-        arg_mock = Mock()
-        arg_mock.filename = ["foo"]
-        arg_mock.verbose = 2
-        arg_mock.quiet = 2
-        image2c64.convert(arg_mock, ConvClass)
-        self.assertEqual(ConvClass.V, 2)
-        self.assertEqual(ConvClass.Q, 2)
-        self.assertEqual(ConvClass.ERRORS, 'none')
-        self.assertEqual(len(ConvClass.SELF), 6)
-
-    def test_hiresconv(self):
-        """
-        Test hiresconv function
-        """
-        interceptor = Interceptor()
-
-        orig_convert = image2c64.convert
-        image2c64.convert = interceptor
-
-        self.assertEqual(interceptor.call, 0)
-        image2c64.hiresconv(None)
-        self.assertEqual(interceptor.call, 1)
-
-        image2c64.convert = orig_convert
-
-    def test_multiconv(self):
-        """
-        Test multiconv function
-        """
-        interceptor = Interceptor()
-
-        orig_convert = image2c64.convert
-        image2c64.convert = interceptor
-
-        self.assertEqual(interceptor.call, 0)
-        image2c64.multiconv(None)
-        self.assertEqual(interceptor.call, 1)
-
-        image2c64.convert = orig_convert
 
 
 if __name__ == "__main__":
