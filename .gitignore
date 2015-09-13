@@ -1,0 +1,7 @@
+*.py[cod]
+.coverage
+.tox
+tags
+MANIFEST
+.cache
+c64img.egg-info
