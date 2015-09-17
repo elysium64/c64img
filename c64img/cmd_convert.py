@@ -65,14 +65,14 @@ def resolve_name(arguments, fname):
 
     format_ = arguments.format
 
-    if arguments.executable:
+    if hasattr(arguments, "executable") and arguments.executable:
 
         format_ = "prg"
         _, ext = os.path.splitext(filename)
         if ext != ".prg":
             filename = get_modified_fname(filename, "prg")
 
-    if arguments.raw:
+    if hasattr(arguments, "raw") and arguments.raw:
 
         format_ = "raw"
         filename, ext = os.path.splitext(filename)
@@ -80,28 +80,14 @@ def resolve_name(arguments, fname):
     return filename, format_
 
 
-def multiconv(arguments):
-    """
-    Convert to multicolor picture
-    """
-    return convert(arguments, MultiConverter)
-
-
-def hiresconv(arguments):
-    """
-    Convert to hires picture
-    """
-    return convert(arguments, HiresConverter)
-
-
 def image2c64():
     """
     Parse options, run the conversion
     """
-    f_map = {"art-studio-hires": hiresconv,
-             "hires": hiresconv,
-             "koala": multiconv,
-             "multi": multiconv}
+    class_map = {"art-studio-hires": HiresConverter,
+                 "hires": HiresConverter,
+                 "koala": MultiConverter,
+                 "multi": MultiConverter}
 
     formatter = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__,
@@ -118,7 +104,7 @@ def image2c64():
                         default="none", choices=("show", "save", "grafx2",
                                                  "fix", "none"))
     parser.add_argument("-f", "--format", help="format of output file, this "
-                        "option is mandatory", choices=f_map.keys(),
+                        "option is mandatory", choices=class_map.keys(),
                         required=True)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("-x", "--executable", help="produce C64 executable as"
@@ -140,7 +126,7 @@ def image2c64():
                        'will increase verbosity', action="count", default=0)
 
     arguments = parser.parse_args()
-    return f_map[arguments.format](arguments)
+    return convert(arguments, class_map[arguments.format])
 
 
 if __name__ == "__main__":

@@ -50,6 +50,9 @@ class LogMock(object):
     def debug(*args, **kwargs):
         return
 
+    def critical(*args, **kwargs):
+        return
+
 
 class Interceptor(object):
     """
@@ -190,13 +193,14 @@ class TestFullScreenImage(TestCase):
         """
         self.assertTrue(base.FullScreenImage(HIRES)._load())
         obj = base.FullScreenImage("nofile")
-        obj.log.critical = lambda x: None  # suppress log
         self.assertFalse(obj._load())
 
         obj = base.FullScreenImage("/none/existing")
         self.assertFalse(obj._load())
+        print "set log level"
         obj.log.setLevel(logging.DEBUG)
         self.assertRaises(IOError, obj._load)
+        obj.log.setLevel(logging.WARNING)
 
     def test__colors_check(self):
         """
@@ -220,19 +224,18 @@ class TestFullScreenImage(TestCase):
         histogram = obj._src_image.histogram()
         self.assertEqual(obj._colors_check(histogram), 2)
 
-    def test__convert(self):
+    def test_convert(self):
         """
-        Test _convert process
+        Test convert process
         """
         obj = base.FullScreenImage("nofile")
-        obj.log.critical = lambda x: None  # suppress log
-        self.assertFalse(obj._convert())
+        self.assertFalse(obj.convert())
 
         obj = base.FullScreenImage(COLORS_256)
-        self.assertRaises(NotImplementedError, obj._convert)
+        self.assertRaises(NotImplementedError, obj.convert)
 
         obj = base.FullScreenImage(CROP_BOTH)
-        self.assertFalse(obj._convert())
+        self.assertFalse(obj.convert())
 
     def test__get_best_palette_map(self):
         """
@@ -434,9 +437,7 @@ class TestFullScreenImage(TestCase):
         """
         Test for _error_image_action method
         """
-        error_img = os.path.join(os.path.dirname(__file__),
-                                 base.get_modified_fname(MULTI, 'png',
-                                                         '_error.'))
+        error_img = base.get_modified_fname(MULTI, 'png', '_error.')
 
         if os.path.exists(error_img):
             os.unlink(error_img)
@@ -461,9 +462,7 @@ class TestFullScreenImage(TestCase):
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)], True)
 
-        error_img = os.path.join(os.path.dirname(__file__),
-                                 base.get_modified_fname(MULTI_320, 'png',
-                                                         '_error.'))
+        error_img = base.get_modified_fname(MULTI_320, 'png', '_error.')
 
         if os.path.exists(error_img):
             os.unlink(error_img)
@@ -488,9 +487,7 @@ class TestFullScreenImage(TestCase):
         obj._errors_action = "show"
         obj._error_image_action([(0, 0)])
 
-        error_img = os.path.join(os.path.dirname(__file__),
-                                 base.get_modified_fname(HIRES, 'png',
-                                                         '_error.'))
+        error_img = base.get_modified_fname(HIRES, 'png', '_error.')
 
         if os.path.exists(error_img):
             os.unlink(error_img)
@@ -516,9 +513,7 @@ class TestFullScreenImage(TestCase):
         obj._error_image_action([(0, 0)])
 
         # Test the grafx2 option
-        error_img = os.path.join(os.path.dirname(__file__),
-                                 base.get_modified_fname(MULTI_320, 'png',
-                                                         '_error.'))
+        error_img = base.get_modified_fname(MULTI_320, 'png', '_error.')
         obj = base.FullScreenImage(MULTI_320)
         obj._load()
         obj._errors_action = "grafx2"

@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import sys
-from c64img.commandline import image2c64
+
+from c64img.cmd_convert import image2c64
 
 
 sys.exit(image2c64())

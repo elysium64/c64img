@@ -50,6 +50,12 @@ class LogMock(object):
     def debug(*args, **kwargs):
         return
 
+    def critical(*args, **kwargs):
+        return
+
+    def getEffectiveLevel(self):
+        return 30  # warn
+
 
 class Interceptor(object):
     """
@@ -357,7 +363,7 @@ class TestMulticolor(TestCase):
         self.assertEqual(obj._src_image.size[0], 160)
 
         obj = multi.MultiConverter("nofile")
-        obj.log.critical = lambda x: None  # suppress log
+        obj.log = LogMock()
         self.assertEqual(obj._load(), False)
         self.assertEqual(obj._src_image, None)
 

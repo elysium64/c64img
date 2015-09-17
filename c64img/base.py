@@ -247,7 +247,7 @@ class FullScreenImage(object):
         Save picture in one of the formats or as an executable prg.
         """
         if not self.data.get('bitmap'):
-            if not self._convert():
+            if not self.convert():
                 return 1
 
         if os.path.exists(filename):
@@ -270,6 +270,22 @@ class FullScreenImage(object):
         self.log.info("Setting border color to: %d", color)
         self.data['border'] = color
 
+    def convert(self):
+        """
+        Convert image to binary data
+        """
+        if not self._load():
+            return False
+
+        if not self._check_dimensions():
+            return False
+
+        hist = self._src_image.histogram()
+        self._colors_check(hist)
+        self._find_best_palette_map()
+        self._find_most_freq_color(hist)
+        return self._fill_memory()
+
     def _load(self):
         """
         Load src image and store it under _src_image attribute.
@@ -280,7 +296,7 @@ class FullScreenImage(object):
                                              dither='none', colors=16)
             self._src_image = img
         except IOError:
-            self.log.critical("Cannot open file `%s'. Exiting." % self._fname)
+            self.log.critical("Cannot open file `%s'. Exiting.", self._fname)
             if self.log.getEffectiveLevel() == logging.DEBUG:
                 raise
             return False
@@ -307,13 +323,9 @@ class FullScreenImage(object):
         pal = self._src_image.getpalette()
         pal = [tuple(pal[index:index + 3]) for index in xrange(0, len(pal),
                                                                3)]
-        highest = (0, 0)
-
-        for index, count in enumerate(histogram[:16]):
-            if count > highest[1]:
-                highest = (index, count)
-
-        self.data['most_freq_color'] = self._palette_map[pal[highest[0]]]
+        highest = sorted([(count, index)
+                          for index, count in enumerate(histogram[:16])])[-1]
+        self.data['most_freq_color'] = self._palette_map[pal[highest[1]]]
 
     def _colors_check(self, histogram):
         """
@@ -328,22 +340,6 @@ class FullScreenImage(object):
             self.log.info("Picture have %d colors", no_of_colors)
 
         return no_of_colors
-
-    def _convert(self):
-        """
-        Convert image to binary data
-        """
-        if not self._load():
-            return False
-
-        if not self._check_dimensions():
-            return False
-
-        hist = self._src_image.histogram()
-        self._colors_check(hist)
-        self._find_best_palette_map()
-        self._find_most_freq_color(hist)
-        return self._fill_memory()
 
     def _get_palette(self):
         """
