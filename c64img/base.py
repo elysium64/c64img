@@ -323,9 +323,15 @@ class FullScreenImage(object):
         pal = self._src_image.getpalette()
         pal = [tuple(pal[index:index + 3]) for index in xrange(0, len(pal),
                                                                3)]
-        highest = sorted([(count, index)
-                          for index, count in enumerate(histogram[:16])])[-1]
-        self.data['most_freq_color'] = self._palette_map[pal[highest[1]]]
+        sorted_hist = sorted([(count, index)
+                              for index, count in enumerate(histogram[:16])],
+                             reverse=True)
+        self.data['most_freq_colors'] = []
+        for _, index in sorted_hist:
+            color = self._palette_map[pal[index]]
+            self.data['most_freq_colors'].append(color)
+
+        self.data['most_freq_color'] = self.data['most_freq_colors'][0]
 
     def _colors_check(self, histogram):
         """

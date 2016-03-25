@@ -88,7 +88,7 @@ class TestMultiChar(TestCase):
         """
         Test Char initialization
         """
-        char = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
         self.assertEqual(char.max_colors, 4)
         self.assertEqual(char.pixel_state, {(0, 1): False,
                                             (1, 0): False,
@@ -98,14 +98,14 @@ class TestMultiChar(TestCase):
         """
         Test get_binary_data method
         """
-        char = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
         char.pixels = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (0, 3): 3,
                        (1, 0): 0, (1, 1): 1, (1, 2): 2, (1, 3): 3}
         char._analyze_color_map()
         result = char.get_binary_data()
-        self.assertEqual(result['bitmap'], [27, 0b011011])  # 27 for all
-        self.assertEqual(result['screen-ram'], 18)
-        self.assertEqual(result['color-ram'], 3)
+        self.assertEqual(result['bitmap'], [57, 0b111001])  # 57 for all
+        self.assertEqual(result['screen-ram'], 50)
+        self.assertEqual(result['color-ram'], 1)
 
         # last pixel with the clash - should fall back to background color
         char.pixels = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (0, 3): 3,
@@ -117,30 +117,16 @@ class TestMultiChar(TestCase):
                        (6, 0): 0, (6, 1): 1, (6, 2): 2, (6, 3): 3,
                        (7, 0): 0, (7, 1): 1, (7, 2): 2, (7, 3): 9}
         result = char.get_binary_data()
-        self.assertEqual(result['bitmap'], [27, 27, 27, 27, 27, 27, 27,
-                                            0b011000])
-        self.assertEqual(result['screen-ram'], 18)
-        self.assertEqual(result['color-ram'], 3)
-
-    def test__compare_colors(self):
-        """
-        Test _compare_colors method
-        """
-        iceptor = Interceptor()
-        char = multi.MultiChar(self.log, 0)
-        char._compare_colors_with_prev_char = iceptor
-        char._compare_colors(None)
-        self.assertEqual(iceptor.call, 1)
-
-        iceptor.repeat = True
-        char._compare_colors(None)
-        self.assertEqual(iceptor.call, 3)
+        self.assertEqual(result['bitmap'], [57, 57, 57, 57, 57, 57, 57,
+                                            0b111000])
+        self.assertEqual(result['screen-ram'], 50)
+        self.assertEqual(result['color-ram'], 1)
 
     def test_analyze_color_map(self):
         """
         Test _analyze_color_map method
         """
-        char = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
         # simulate clash
         char.max_colors = 1
         char.pixels[(0, 0)] = 1
@@ -151,7 +137,7 @@ class TestMultiChar(TestCase):
         # simulate previous image clash
         char.clash = False
         char.max_colors = 2
-        char.prev = multi.MultiChar(self.log, 0)
+        char.prev = multi.MultiChar(self.log, {0: (0, 0)})
         char.prev.clash = True
         char._analyze_color_map()
         self.assertEqual(char.colors[0], (0, 0))
@@ -163,7 +149,7 @@ class TestMultiChar(TestCase):
         for creating new mapping for multicolor bit pairs in conjunction with
         corresponding colors.
         """
-        char = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
         colors = {0: 16,
                   1: 4,
                   2: 5,
@@ -186,8 +172,8 @@ class TestMultiChar(TestCase):
 
         # 1. Ideal case. Colors for previous and current character in char
         # boundary are the same. No need to rerun checks.
-        char = multi.MultiChar(self.log, 0)
-        prev = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
+        prev = multi.MultiChar(self.log, {0: (0, 0)})
         prev.colors = {1: (0, 1), 2: (1, 0), 3: (1, 1)}
         char.prev = prev
         self.assertFalse(char._compare_colors_with_prev_char(colors))
@@ -199,8 +185,8 @@ class TestMultiChar(TestCase):
         # 2. Mixed colors/pixel pairs. Color indices are matching fine. Colors
         # and pairs from previous character should be propagated into current
         # char.
-        char = multi.MultiChar(self.log, 0)
-        prev = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
+        prev = multi.MultiChar(self.log, {0: (0, 0)})
         prev.colors = {3: (0, 1), 1: (1, 0), 2: (1, 1)}
         char.prev = prev
         self.assertFalse(char._compare_colors_with_prev_char(colors))
@@ -212,8 +198,8 @@ class TestMultiChar(TestCase):
         # 3. Mixed colors/pixel pairs. One color index differ. Colors and
         # pairs from previous character should be propagated into current
         # char, the mismatch color should be replaced by current one.
-        char = multi.MultiChar(self.log, 0)
-        prev = multi.MultiChar(self.log, 0)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
+        prev = multi.MultiChar(self.log, {0: (0, 0)})
         prev.colors = {3: (0, 1), 4: (1, 0), 2: (1, 1)}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
@@ -230,8 +216,8 @@ class TestMultiChar(TestCase):
         # 4. Mixed colors/pixel pairs. One color index match. Colors and
         # pairs from previous character should be propagated into current
         # char, the mismatch colors should be replaced by current ones.
-        char = multi.MultiChar(self.log, 0)
-        prev = multi.MultiChar(self.log, 6)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
+        prev = multi.MultiChar(self.log, {6: (0, 0)})
         prev.colors = {4: (0, 1), 3: (1, 0), 5: (1, 1)}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
@@ -247,8 +233,8 @@ class TestMultiChar(TestCase):
 
         # 5. Worst case scenario. None of the colors from previous char
         # matches. Get the current colors.
-        char = multi.MultiChar(self.log, 0)
-        prev = multi.MultiChar(self.log, 6)
+        char = multi.MultiChar(self.log, {0: (0, 0)})
+        prev = multi.MultiChar(self.log, {6: (0, 0)})
         prev.colors = {4: (0, 1), 5: (1, 0), 6: (1, 1)}
         char.prev = prev
         self.assertTrue(char._compare_colors_with_prev_char(colors))
@@ -270,7 +256,8 @@ class TestMultiChar(TestCase):
         col3 = 3  # magenta
         clash = 4  # purple
 
-        char = multi.MultiChar(self.log, bg, prev=None, fix_clash=True)
+        char = multi.MultiChar(self.log, {bg: (0, 0)}, prev=None,
+                               fix_clash=True)
 
         char.pixels = {(0, 0): bg, (0, 1): col1, (0, 2): col2, (0, 3): col3,
                        (1, 0): bg, (1, 1): col1, (1, 2): col2, (1, 3): col3,
@@ -289,7 +276,8 @@ class TestMultiChar(TestCase):
         c3 = 5  # green
         c4 = 6  # d.blue
 
-        char = multi.MultiChar(self.log, bg, prev=None, fix_clash=True)
+        char = multi.MultiChar(self.log, {bg: (0, 0)}, prev=None,
+                               fix_clash=True)
         char.pixels = {(0, 0): c1, (0, 1): c2, (0, 2): c3, (0, 3): c4,
                        (1, 0): c1, (1, 1): c2, (1, 2): c3, (1, 3): c4,
                        (2, 0): c1, (2, 1): c2, (2, 2): c3, (2, 3): c4,
@@ -311,7 +299,8 @@ class TestMultiChar(TestCase):
         c3 = 5  # green
         c4 = 3  # magenta
 
-        char = multi.MultiChar(self.log, bg, prev=None, fix_clash=True)
+        char = multi.MultiChar(self.log, {bg: (0, 0)}, prev=None,
+                               fix_clash=True)
         char.pixels = {(0, 0): c1, (0, 1): c2, (0, 2): c3, (0, 3): c4,
                        (1, 0): c1, (1, 1): c2, (1, 2): c3, (1, 3): c4,
                        (2, 0): c1, (2, 1): c2, (2, 2): c3, (2, 3): c4,

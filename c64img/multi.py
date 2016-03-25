@@ -13,15 +13,17 @@ from c64img import base
 class MultiChar(base.Char):
     """Char implementation for multicolor mode."""
 
-    def __init__(self, log, background, prev=None, fix_clash=False):
+    def __init__(self, log, pixels_pairs, prev=None, fix_clash=False):
         """
         Init. prev is the Char object which represents the same character
         in previous picture
         """
         super(MultiChar, self).__init__(log, prev, fix_clash)
-
-        self.background = background
+        self.background = [x
+                           for x, y in pixels_pairs.items()
+                           if y == (0, 0)][0]
         self.max_colors = 4
+        self.global_pixel_pairs = pixels_pairs  # 1: (0, 1), 2: (1, 1)...
         self.pixel_state = {(0, 1): False,
                             (1, 0): False,
                             (1, 1): False}
@@ -34,6 +36,51 @@ class MultiChar(base.Char):
         """
         self.colors[self.background] = (0, 0)
         super(MultiChar, self)._analyze_color_map()
+
+    def _compare_colors(self, colors):
+        """Overwritten compare colors routine"""
+
+        for color in colors:
+            pair = self.global_pixel_pairs.get(color)
+            if pair is not None:
+                self.pixel_state[pair] = True
+                self.colors[color] = pair
+
+        for color in colors:
+            if color == self.background:
+                continue
+            if color in self.global_pixel_pairs:
+                continue
+
+            if not self.pixel_state[(1, 1)]:
+                self.pixel_state[(1, 1)] = True
+                self.colors[color] = (1, 1)
+                continue
+
+            if not self.pixel_state[(1, 0)]:
+                if self.prev and self.prev.colors.get(color, None) is not None:
+                    # XXX: how about case, where we have previous data vs
+                    # global colors prediction. Have to checkit.
+                    pass
+                self.log.debug("Anomaly reserving state 1,0, %s", self.prev)
+                self.pixel_state[(1, 0)] = True
+                self.colors[color] = (1, 0)
+                continue
+
+            if not self.pixel_state[(0, 1)]:
+                self.log.debug("Anomaly reserving state 0,1")
+                self.pixel_state[(0, 1)] = True
+                self.colors[color] = (0, 1)
+                continue
+
+        for color in colors:
+            if color in self.colors:
+                continue
+
+            # XXX: same as above
+            if self.prev and self.prev.colors.get(color, None) is not None:
+                self.colors[color] = self.prev.colors[color]
+                self.pixel_state[self.prev.colors[color]] = True
 
     def get_binary_data(self):
         """
@@ -132,8 +179,20 @@ class MultiConverter(base.FullScreenImage):
         self.data["color-ram"] = []
         self.data["background"] = self._get_background()
         self.data["chars"] = []
-
+        used_color_pairs = {'can_be_chars': True}
         error_list = []
+        pixel_state = {(0, 0): self.data['background']}
+
+        for color in self.data['most_freq_colors']:
+            if color == self.data['background']:
+                continue
+            if (0, 1) not in pixel_state:
+                pixel_state[(0, 1)] = color
+                continue
+            if (1, 0) not in pixel_state:
+                pixel_state[(1, 0)] = color
+            break
+        pixel_state = {y: x for x, y in pixel_state.items()}
 
         # get every char (4x8 pixels) starting from upper left corner
         for chry, chrx in [(chry, chrx)
@@ -144,7 +203,7 @@ class MultiConverter(base.FullScreenImage):
                                         chrx + 4, chry + 8)).convert("RGB")
 
             char = MultiChar(self.log,
-                             self.data["background"],
+                             pixel_state,
                              self.prev_chars.get((chry, chrx)),
                              self._errors_action == "fix")
             char.process(box, self._palette_map)
@@ -155,6 +214,7 @@ class MultiConverter(base.FullScreenImage):
             self.data['screen-ram'].append(char_data['screen-ram'])
             self.data['color-ram'].append(char_data['color-ram'])
 
+            self.prev_chars[(chry, chrx)] = char
             if char.clash:
                 error_list.append((chrx, chry))
                 self.log.error("Too many colors per block in char %d, %d near"
@@ -164,9 +224,28 @@ class MultiConverter(base.FullScreenImage):
                                chrx + 4,
                                chry + 4)
 
+            for color, pair in char.colors.items():
+                if pair not in used_color_pairs:
+                    used_color_pairs[pair] = color
+                    continue
+
+                if used_color_pairs[pair] != color and pair != (1, 1):
+                    used_color_pairs['can_be_chars'] = False
+                    break
+
         if error_list:
             self._error_image_action(error_list, self._scaled)
             return False
+
+        if used_color_pairs['can_be_chars']:
+            self.log.debug(used_color_pairs)
+            del used_color_pairs['can_be_chars']
+            used_color_pairs = {x: base.COLOR_NAMES[y]
+                                for x, y in used_color_pairs.items()}
+            self.log.info("Possible char conversion. Pixel pairs and "
+                          "corresponding colors: %s", used_color_pairs)
+        else:
+            self.log.debug("Image cannot be converted to chars")
 
         self.log.info("Conversion successful.")
         return True
