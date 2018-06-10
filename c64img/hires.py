@@ -17,7 +17,7 @@ class HiresChar(base.Char):
         """
         Return binary data for the char
         """
-        result = {"bitmap": [], "screen_ram": 0}
+        result = {"bitmap": [], "screen-ram": 0}
 
         for row in zip(*[iter(sorted(self.pixels))] * 8):
             char_line = 0
@@ -27,7 +27,9 @@ class HiresChar(base.Char):
             result['bitmap'].append(char_line)
 
         colors = dict([(y, x) for x, y in self.colors.items()])
-        result['screen-ram'] = colors.get(0)
+        if 0 in colors:
+            result['screen-ram'] = colors[0]
+
         if 1 in colors:
             result['screen-ram'] += colors[1] * 16
         return result
