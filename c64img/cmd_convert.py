@@ -9,6 +9,7 @@ import argparse
 import os
 import sys
 
+from c64img import __version__ as ver
 from c64img.hires import HiresConverter
 from c64img.multi import MultiConverter
 from c64img.path import get_modified_fname
@@ -124,6 +125,8 @@ def image2c64():
                        default=0)
     group.add_argument("-v", "--verbose", help='be verbose. Adding more "v" '
                        'will increase verbosity', action="count", default=0)
+    parser.add_argument("-V", "--version", action='version',
+                        version="%(prog)s v" + ver)
 
     arguments = parser.parse_args()
     return convert(arguments, class_map[arguments.format])

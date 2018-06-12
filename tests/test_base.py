@@ -197,7 +197,6 @@ class TestFullScreenImage(TestCase):
 
         obj = base.FullScreenImage("/none/existing")
         self.assertFalse(obj._load())
-        print "set log level"
         obj.log.setLevel(logging.DEBUG)
         self.assertRaises(IOError, obj._load)
         obj.log.setLevel(logging.WARNING)
