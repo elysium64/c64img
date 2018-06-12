@@ -4,4 +4,5 @@
 tags
 MANIFEST
 .cache
+.pytest_cache
 c64img.egg-info
