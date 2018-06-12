@@ -253,5 +253,6 @@ class TestCmd(TestCase):
         """
         self.assertEqual(cmd_convert.image2c64(), 0)
 
+
 if __name__ == "__main__":
     main()

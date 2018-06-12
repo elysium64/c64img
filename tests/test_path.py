@@ -6,7 +6,6 @@ This is part of the c64img project <https://bitbucket.org/gryf/image2c64>
 Author: Roman 'gryf' Dobosz <gryf73@gmail.com>
 Licence: BSD
 """
-import os
 from unittest import TestCase, main
 
 from c64img import path
