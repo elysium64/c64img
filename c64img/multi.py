@@ -284,8 +284,6 @@ class MultiConverter(base.FullScreenImage):
 
         file_obj.write(chr(self.data["background"]))
 
-        border = self._get_border()
-        file_obj.write("%c" % border)
         file_obj.close()
         self.log.info("Saved in Koala format under `%s' file", filename)
         return True

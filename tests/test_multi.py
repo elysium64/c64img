@@ -379,7 +379,7 @@ class TestMulticolor(TestCase):
         self.assertEqual(obj.save(fname, "koala"), 0)
 
         self.assertTrue(os.path.exists(fname))
-        self.assertEqual(os.stat(fname).st_size, 10004)
+        self.assertEqual(os.stat(fname).st_size, 10003)
         os.unlink(fname)
 
         obj = multi.MultiConverter(CLASH_M)
