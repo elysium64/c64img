@@ -93,10 +93,10 @@ def image2c64():
     formatter = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=formatter)
-    parser.add_argument("-b", "--border", help="set color number for border, "
+    parser.add_argument("-g", "--border", help="set color number for border, "
                         "default: most frequent color", type=int,
                         choices=range(16))
-    parser.add_argument("-g", "--background", help="set color number for "
+    parser.add_argument("-b", "--background", help="set color number for "
                         "background", type=int, choices=range(16))
     parser.add_argument("-e", "--errors", help="perform the action in case of "
                         "color clashes: save errormap under the same name "
