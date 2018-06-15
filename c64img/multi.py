@@ -100,8 +100,8 @@ class MultiChar(base.Char):
         col1 = colors.get((0, 1), colors.get((0, 0))) * 16
         col2 = colors.get((1, 0), colors.get((0, 0)))
 
-        result["screen-ram"] = col1 + col2
-        result["color-ram"] = colors.get((1, 1), colors.get((0, 0)))
+        result["color-ram"] = col1 + col2
+        result["screen-ram"] = colors.get((1, 1), colors.get((0, 0)))
 
         return result
 
@@ -257,9 +257,9 @@ class MultiConverter(base.FullScreenImage):
         file_obj = open(filename, "wb")
         file_obj.write(self._get_displayer())
         file_obj.write(951 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
-        file_obj.write(3096 * chr(0))
         file_obj.write("".join([chr(col) for col in self.data["color-ram"]]))
+        file_obj.write(3096 * chr(0))
+        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
         file_obj.write(24 * chr(0))
         file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
         file_obj.close()
@@ -276,10 +276,10 @@ class MultiConverter(base.FullScreenImage):
         for char in self.data['bitmap']:
             file_obj.write("%c" % char)
 
-        for char in self.data["screen-ram"]:
+        for char in self.data["color-ram"]:
             file_obj.write("%c" % char)
 
-        for char in self.data["color-ram"]:
+        for char in self.data["screen-ram"]:
             file_obj.write("%c" % char)
 
         file_obj.write(chr(self.data["background"]))

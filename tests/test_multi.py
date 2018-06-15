@@ -104,8 +104,8 @@ class TestMultiChar(TestCase):
         char._analyze_color_map()
         result = char.get_binary_data()
         self.assertEqual(result['bitmap'], [57, 0b111001])  # 57 for all
-        self.assertEqual(result['screen-ram'], 50)
-        self.assertEqual(result['color-ram'], 1)
+        self.assertEqual(result['color-ram'], 50)
+        self.assertEqual(result['screen-ram'], 1)
 
         # last pixel with the clash - should fall back to background color
         char.pixels = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (0, 3): 3,
@@ -119,8 +119,8 @@ class TestMultiChar(TestCase):
         result = char.get_binary_data()
         self.assertEqual(result['bitmap'], [57, 57, 57, 57, 57, 57, 57,
                                             0b111000])
-        self.assertEqual(result['screen-ram'], 50)
-        self.assertEqual(result['color-ram'], 1)
+        self.assertEqual(result['color-ram'], 50)
+        self.assertEqual(result['screen-ram'], 1)
 
     def test_analyze_color_map(self):
         """
