@@ -2,7 +2,7 @@
 """
 Setup for the c64img
 """
-from distutils.core import setup
+from setuptools import setup
 
 from c64img import __version__ as ver
 
@@ -21,7 +21,7 @@ setup(name='c64img',
       classifiers=['Programming Language :: Python :: 2',
                    'Programming Language :: Python :: 2.7',
                    'Programming Language :: Python :: 2 :: Only',
-                   'Development Status :: 5 - Stable',
+                   'Development Status :: 5 - Production/Stable',
                    'Environment :: Console',
                    'Intended Audience :: End Users/Desktop',
                    'License :: OSI Approved :: BSD License',
