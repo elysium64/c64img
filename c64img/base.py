@@ -189,7 +189,7 @@ class Char(object):
         Make a color map to the pixels comparing to the previous data
         """
         needs_repeat = False
-        for color in colors:
+        for color in sorted(colors):
             if color == self.background:
                 continue
             if repeat:
@@ -321,8 +321,7 @@ class FullScreenImage(object):
         index in the C64 palette (NOT the source image palette!).
         """
         pal = self._src_image.getpalette()
-        pal = [tuple(pal[index:index + 3]) for index in xrange(0, len(pal),
-                                                               3)]
+        pal = [tuple(pal[index:index + 3]) for index in range(0, len(pal), 3)]
         sorted_hist = sorted([(count, index)
                               for index, count in enumerate(histogram[:16])],
                              reverse=True)

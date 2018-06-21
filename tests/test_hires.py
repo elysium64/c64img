@@ -249,16 +249,13 @@ class TestHires(TestCase):
         Test for _get_displayer method
         """
         obj = hires.HiresConverter(HIRES)
-        border = chr(0)
-        displayer = ["\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x34\x00"
-                     "\x00\x00\x00\x00\x00\x78\xa9", border, "\x8d\x20\xd0\xa9"
-                     "\x00\x8d\x21\xd0\xa9\xbb\x8d\x11\xd0\xa9\x3c\x8d"
-                     "\x18\xd0\x4c\x25\x08"]
-        self.assertEqual(obj._get_displayer(), "".join(displayer))
-        border = chr(10)
-        displayer[1] = border
-        obj.set_border_color(10)
-        self.assertEqual(obj._get_displayer(), "".join(displayer))
+        border = 0
+        # displayer routine is constant. On index 19 there is a border color.
+        self.assertEqual(obj._get_displayer()[19], border)
+
+        border = 10
+        obj.set_border_color(border)
+        self.assertEqual(obj._get_displayer()[19], border)
 
     def test_save(self):
         """

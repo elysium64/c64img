@@ -28,7 +28,7 @@ used more than 16 colors.
 Requirements:
 -------------
 
-+ `Python 2.7`_
++ `Python`_ 2.7, 3.5 or 3.6 (at the moment)
 + `Pillow`_ module
 
 
@@ -58,7 +58,7 @@ finally, if you prefer to use virtualenv:
 
 .. code:: shell-session
 
-   $ virtualenv -p python2 venvname
+   $ virtualenv venvname
    $ source venvname/bin/activate
    (venvname) $ pip install c64img
 
@@ -192,7 +192,7 @@ details.
 .. _PNG2HIRES_ v0.2 gfx format converter: http://www.atlantis-prophecy.org/onslaught/legal.html
 .. _pillow: https://github.com/python-imaging/Pillow
 .. _grafx2: http://grafx2.chez.com
-.. _python 2.7: https://www.python.org
+.. _python: https://www.python.org
 .. _setuptools: https://pypi.python.org/pypi/setuptools
 .. _pip: https://github.com/pypa/pip
 .. _pypi: https://pypi.org

@@ -158,16 +158,20 @@ class MultiConverter(base.FullScreenImage):
         """
         Get displayer for multicolor picture (based on kickassembler example)
         """
-        border = chr(self._get_border())
-        background = chr(self._get_background())
-        displayer = ["\x01\x08\x0b\x08\n\x00\x9e2064\x00\x00\x00\x00\x00\x00"
-                     "\xa98\x8d\x18\xd0\xa9\xd8\x8d\x16\xd0\xa9;\x8d\x11\xd0"
-                     "\xa9", border, "\x8d \xd0\xa9", background, "\x8d!\xd0"
-                     "\xa2\x00\xbd\x00\x1c\x9d\x00\xd8\xbd\x00\x1d\x9d\x00"
-                     "\xd9\xbd\x00\x1e\x9d\x00\xda\xbd\x00\x1f\x9d\x00\xdb"
-                     "\xe8\xd0\xe5LF\x08"]
+        border = self._get_border()
+        background = self._get_background()
 
-        return "".join(displayer)
+        return bytearray([0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e,
+                          0x32, 0x30, 0x36, 0x34,
+                          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa9,
+                          0x38, 0x8d, 0x18, 0xd0, 0xa9, 0xd8, 0x8d, 0x16,
+                          0xd0, 0xa9, 0x3b, 0x8d, 0x11, 0xd0, 0xa9, border,
+                          0x8d, 0x20, 0xd0, 0xa9, background, 0x8d, 0x21,
+                          0xd0, 0xa2, 0x00, 0xbd, 0x00, 0x1c, 0x9d, 0x00,
+                          0xd8, 0xbd, 0x00, 0x1d, 0x9d, 0x00, 0xd9, 0xbd,
+                          0x00, 0x1e, 0x9d, 0x00, 0xda, 0xbd, 0x00, 0x1f,
+                          0x9d, 0x00, 0xdb, 0xe8, 0xd0, 0xe5, 0x4c, 0x46,
+                          0x08])
 
     def _fill_memory(self):
         """
@@ -256,12 +260,12 @@ class MultiConverter(base.FullScreenImage):
         """
         file_obj = open(filename, "wb")
         file_obj.write(self._get_displayer())
-        file_obj.write(951 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["color-ram"]]))
-        file_obj.write(3096 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
-        file_obj.write(24 * chr(0))
-        file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
+        file_obj.write(951 * b'\x00')
+        file_obj.write(bytearray(self.data["color-ram"]))
+        file_obj.write(3096 * b'\x00')
+        file_obj.write(bytearray(self.data["screen-ram"]))
+        file_obj.write(24 * b'\x00')
+        file_obj.write(bytearray(self.data["bitmap"]))
         file_obj.close()
         self.log.info("Saved executable under `%s' file", filename)
         return True
@@ -271,18 +275,11 @@ class MultiConverter(base.FullScreenImage):
         Save as Koala format
         """
         file_obj = open(filename, "wb")
-        file_obj.write("%c%c" % (0x00, 0x60))
-
-        for char in self.data['bitmap']:
-            file_obj.write("%c" % char)
-
-        for char in self.data["color-ram"]:
-            file_obj.write("%c" % char)
-
-        for char in self.data["screen-ram"]:
-            file_obj.write("%c" % char)
-
-        file_obj.write(chr(self.data["background"]))
+        file_obj.write(bytearray([0x00, 0x60]))
+        file_obj.write(bytearray(self.data['bitmap']))
+        file_obj.write(bytearray(self.data["color-ram"]))
+        file_obj.write(bytearray(self.data["screen-ram"]))
+        file_obj.write(bytearray([self.data["background"]]))
 
         file_obj.close()
         self.log.info("Saved in Koala format under `%s' file", filename)
@@ -294,19 +291,16 @@ class MultiConverter(base.FullScreenImage):
         """
 
         with open(filename + "_bitmap.raw", "wb") as file_obj:
-            for char in self.data['bitmap']:
-                file_obj.write("%c" % char)
+            file_obj.write(bytearray(self.data['bitmap']))
 
         with open(filename + "_screen.raw", "wb") as file_obj:
-            for char in self.data["screen-ram"]:
-                file_obj.write("%c" % char)
+            file_obj.write(bytearray(self.data["screen-ram"]))
 
         with open(filename + "_color-ram.raw", "wb") as file_obj:
-            for char in self.data["color-ram"]:
-                file_obj.write("%c" % char)
+            file_obj.write(bytearray(self.data["color-ram"]))
 
         with open(filename + "_bg.raw", "wb") as file_obj:
-            file_obj.write(chr(self.data["background"]))
+            file_obj.write(bytearray([self.data["background"]]))
 
         self.log.info("Saved in raw format under `%s_*' files", filename)
         return True

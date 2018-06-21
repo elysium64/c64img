@@ -19,11 +19,14 @@ class HiresChar(base.Char):
         """
         result = {"bitmap": [], "screen-ram": 0}
 
-        for row in zip(*[iter(sorted(self.pixels))] * 8):
+        pixel_keys = sorted(self.pixels.keys())
+
+        for key_row in [pixel_keys[index:index+8]
+                        for index in range(0, len(pixel_keys), 8)]:
             char_line = 0
-            for idx, pixel in enumerate(row):
-                bit_ = self.colors.get(self.pixels[pixel], 0)
-                char_line += bit_ * 2 ** (7 - idx)
+            for key in key_row:
+                bit_ = self.colors.get(self.pixels[key], 0)
+                char_line += bit_ * 2 ** (7 - key[1])
             result['bitmap'].append(char_line)
 
         colors = dict([(y, x) for x, y in self.colors.items()])
@@ -57,12 +60,12 @@ class HiresConverter(base.FullScreenImage):
         """
         Get displayer for hires picture
         """
-        border = "%c" % self._get_border()
-        displayer = ["\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x34\x00"
-                     "\x00\x00\x00\x00\x00\x78\xa9", border, "\x8d\x20\xd0\xa9"
-                     "\x00\x8d\x21\xd0\xa9\xbb\x8d\x11\xd0\xa9\x3c\x8d"
-                     "\x18\xd0\x4c\x25\x08"]
-        return "".join(displayer)
+        return bytearray([0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32,
+                          0x30, 0x36, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00,
+                          0x00, 0x78, 0xa9, self._get_border(), 0x8d, 0x20,
+                          0xd0, 0xa9, 0x00, 0x8d, 0x21, 0xd0, 0xa9, 0xbb,
+                          0x8d, 0x11, 0xd0, 0xa9, 0x3c, 0x8d, 0x18, 0xd0,
+                          0x4c, 0x25, 0x08])
 
     def _fill_memory(self):
         """
@@ -111,10 +114,10 @@ class HiresConverter(base.FullScreenImage):
         """
         file_obj = open(filename, "wb")
         file_obj.write(self._get_displayer())
-        file_obj.write(984 * chr(0))
-        file_obj.write("".join([chr(col) for col in self.data["screen-ram"]]))
-        file_obj.write(4120 * chr(0))
-        file_obj.write("".join([chr(byte) for byte in self.data["bitmap"]]))
+        file_obj.write(984 * b'\x00')
+        file_obj.write(bytearray(self.data["screen-ram"]))
+        file_obj.write(4120 * b'\x00')
+        file_obj.write(bytearray(self.data["bitmap"]))
         file_obj.close()
         self.log.info("Saved executable under `%s' file", filename)
         return True
@@ -124,17 +127,11 @@ class HiresConverter(base.FullScreenImage):
         Save as Art Studio hires
         """
         file_obj = open(filename, "wb")
-        file_obj.write("%c%c" % (0x00, 0x20))
-
-        for char in self.data['bitmap']:
-            file_obj.write("%c" % char)
-
-        for char in self.data["screen-ram"]:
-            file_obj.write("%c" % char)
-
-        border = self._get_border()
-        file_obj.write("%c" % border)
-        file_obj.write("\x00\x00\x00\x00\x00\x00")
+        file_obj.write(bytearray([0x00, 0x20]))
+        file_obj.write(bytearray(self.data['bitmap']))
+        file_obj.write(bytearray(self.data["screen-ram"]))
+        file_obj.write(bytearray([self._get_border()]))
+        file_obj.write(6 * b'\x00')
         file_obj.close()
         self.log.info("Saved in Art Studio Hires format under `%s' file",
                       filename)
@@ -145,12 +142,10 @@ class HiresConverter(base.FullScreenImage):
         Save raw data
         """
         with open(filename + "_screen.raw", "wb") as file_obj:
-            file_obj.write("".join([chr(col)
-                                    for col in self.data["screen-ram"]]))
+            file_obj.write(bytearray(self.data["screen-ram"]))
 
         with open(filename + "_bitmap.raw", "wb") as file_obj:
-            file_obj.write("".join([chr(byte)
-                                    for byte in self.data["bitmap"]]))
+            file_obj.write(bytearray(self.data["bitmap"]))
 
         self.log.info("Saved raw data under `%s_*' files", filename)
         return True
