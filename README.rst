@@ -28,7 +28,7 @@ used more than 16 colors.
 Requirements:
 -------------
 
-+ `Python`_ 2.7, 3.5 or 3.6 (at the moment)
++ `Python`_ 2.7, >3.5
 + `Pillow`_ module
 
 
@@ -76,7 +76,7 @@ First of all, check up the switches program provides:
 
 Besides fine-tuning options like ``-b``/``--border`` for selecting border
 color, ``-g``/``--background`` for selecting background color, it allows to
-select aprorpiate output format:
+select appropriate output format:
 
 - *multi* - for pure data located at ``$6000``
 - *hires* - same, but for hires bitmap and colors (``$2000``)
@@ -86,7 +86,7 @@ select aprorpiate output format:
 
 Those formats should be passed using ``-f``/``--format`` parameter.
 
-Furthemore two more switches can be used for output format:
+Furthermore two more switches can be used for output format:
 
 - *raw* (``-r``, ``--raw``) - this will produce four files (*prefix* is
   obtained from the input image file name, or by using ``-o`` switch for
@@ -169,6 +169,7 @@ Example of output for ``save`` and ``fix`` arguments for ``--error`` parameter:
 Changes
 -------
 
++ 2021-08-14 Forgot to push python3 support!
 + 2018-06-12 Added information about possibility to convert picture to chars
   (no conversion! Just an info in log!)
 + 2015-09-10 Rearranged repository into separate modules for maintainability
